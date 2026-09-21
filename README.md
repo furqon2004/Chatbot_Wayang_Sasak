@@ -1,0 +1,128 @@
+# Backend Prediksi Gambar Wayang Sasak — Tahap 1
+
+Backend FastAPI ini memuat `CLIPVisionModelWithProjection`, image processor,
+linear classifier, label mapping, dan basis pengetahuan tepat satu kali saat
+startup. Lingkupnya hanya `GET /health` dan `POST /predict-image`.
+
+## Struktur
+
+```text
+app/
+  api.py          # lifespan dan endpoint
+  config.py       # path serta batas upload
+  inference.py    # pipeline inferensi
+  resources.py    # validasi dan pemuatan artefak
+scripts/
+  colab_smoke_test.py
+tests/
+main.py
+```
+
+## Instalasi dan menjalankan server
+
+Di Google Colab, mount Drive lebih dulu, pindah ke folder source code ini, lalu:
+
+```bash
+pip install -r requirements.txt
+uvicorn main:app --host 0.0.0.0 --port 8000
+```
+
+Default produksi tidak berubah:
+
+- model: `/content/drive/MyDrive/skripsi_wayang/model_clip_b32_terbaik`
+- knowledge base: `/content/drive/MyDrive/skripsi_wayang/wayang_db.json`
+
+Override opsional untuk test/deployment lain:
+
+```bash
+export WAYANG_MODEL_DIR=/path/ke/model_clip_b32_terbaik
+export WAYANG_DB_PATH=/path/ke/wayang_db.json
+export WAYANG_MAX_UPLOAD_BYTES=10485760
+```
+
+### Temperature scaling
+
+Rumus model aktif telah diverifikasi dari notebook training `Untitled33.ipynb`:
+
+```python
+logits_raw = classifier(image_embeddings)
+logits_scaled = logits_raw / temperature
+probabilities = torch.softmax(logits_scaled, dim=-1)
+```
+
+Temperature selalu dibaca dari `model_config.json` (nilai model aktif saat
+dokumentasi ini ditulis: `0.21597230434417725`). Backend tidak memiliki mode
+perkalian dan tidak memakai `SUPCON_TEMPERATURE=0.10`, karena nilai tersebut
+hanya digunakan oleh supervised contrastive loss saat training.
+
+## Pemakaian API
+
+```bash
+curl http://127.0.0.1:8000/health
+
+curl -X POST http://127.0.0.1:8000/predict-image \
+  -F "file=@/path/ke/gambar-wayang.jpg"
+```
+
+`/health` mengembalikan status kesiapan, arsitektur, device, jumlah kelas, dan
+status knowledge base tanpa menampilkan path lokal. `/predict-image`
+mengembalikan:
+
+- `prediksi`: ID, label, nama, confidence top-1, dan margin top-1/top-2;
+- `top_3`: tiga ID/label/nama beserta probabilitas desimal 0–1;
+- `profil`: profil tokoh top-1 dari `wayang_db.json`.
+
+`confidence` adalah probabilitas keluaran model, bukan kepastian objektif.
+Angka dibulatkan menjadi enam desimal hanya pada respons API.
+
+Error utama:
+
+| HTTP | Kondisi |
+|---:|---|
+| 400 | upload kosong, rusak, atau bukan data gambar valid |
+| 413 | ukuran melewati `WAYANG_MAX_UPLOAD_BYTES` |
+| 415 | MIME/format bukan JPEG, PNG, atau WebP |
+| 422 | field multipart `file` tidak diberikan |
+| 500 | kegagalan inferensi internal (tanpa traceback pada respons) |
+| 503 | resource belum siap |
+
+## Pengujian lokal
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
+
+Unit test menggunakan model tiruan dan temporary artifact. Test mencakup
+startup/load satu kali, health, PNG/JPEG, RGB, top-3 dan probabilitas fixture,
+upload invalid/kosong/terlalu besar, artefak hilang, checkpoint, pembagian temperature,
+error internal, dan fallback CPU. Kelulusan unit test bukan bukti kecocokan
+dengan model asli.
+
+## Smoke test integrasi Google Colab
+
+Setelah Drive di-mount, jalankan validasi artefak asli dengan sebuah gambar:
+
+```bash
+python scripts/colab_smoke_test.py \
+  --image /content/path/gambar-acuan.jpg \
+  --tolerance 1e-5
+```
+
+Skrip menghitung pembanding independen dengan urutan operasi notebook. Untuk
+perbandingan tambahan dengan output `Untitled33.ipynb`, simpan JSON referensi
+dengan field `prediksi.id`, `prediksi.confidence`, `prediksi.margin`, serta
+`top_3[].id` dan `top_3[].probability`, lalu tambahkan:
+
+```bash
+--reference-json /content/path/hasil-evaluasi.json
+```
+
+Skrip memakai artefak asli, memeriksa `/health`, lalu membandingkan ID top-1,
+urutan dan probabilitas top-3, confidence, serta margin. Hasil aktual baru
+dicetak saat dijalankan; dokumentasi ini tidak mengarang output model.
+
+## Di luar lingkup
+
+Tahap ini belum mencakup hybrid retrieval, `/search`, Gemini, `/chat`, ChromaDB,
+atau Streamlit. Dataset, model, JSON, dan ChromaDB tidak ditulis atau diubah.
