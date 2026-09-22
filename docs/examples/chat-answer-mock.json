@@ -1,0 +1,19 @@
+{
+  "mode": "answer",
+  "answer": "Berdasarkan basis pengetahuan Wayang Sasak:\n\nJayangrana: Tokoh utama Wayang Sasak dalam fixture sintetis.",
+  "sources": [
+    {
+      "document": "wayang_db.json",
+      "id": 0,
+      "label": "jayangrana",
+      "evidence_ids": [
+        "profile:0:deskripsi:0"
+      ]
+    }
+  ],
+  "suggestions": [
+    "Apa ciri-ciri Jayangrana?"
+  ],
+  "llm_used": false,
+  "llm_status": "not_configured"
+}

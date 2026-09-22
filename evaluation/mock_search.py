@@ -20,6 +20,7 @@ def mock_service(threshold=DEFAULT_SEARCH_THRESHOLD):
     characters[10]["nama"] = "Darun Dia"
     characters[0]["deskripsi"] = "Tokoh utama Wayang Sasak dalam fixture sintetis."
     characters[2].update(deskripsi="Tokoh berselendang ungu sintetis.", filosofi="Lentera sintetis.")
+    characters[19]["filosofi"] = "Filosofi Gunungan dalam fixture sintetis."
 
     class MockSemantic:
         document_count = 47

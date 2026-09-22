@@ -3,9 +3,12 @@
 Backend FastAPI ini memuat `CLIPVisionModelWithProjection`, image processor,
 linear classifier, label mapping, dan basis pengetahuan tepat satu kali saat
 startup. Kontrak Tahap 1 (`GET /health`, `POST /predict-image`) dipertahankan;
-Tahap 2 menambahkan `POST /search`.
+Tahap 2 menambahkan `POST /search`. Persiapan Tahap 3 (`POST /chat`) sudah
+tersedia dengan fallback deterministik; aktivasi/validasi Gemini ditunda atas
+permintaan pengguna sampai API key siap. Tahap 3 belum dinyatakan selesai.
 
 Dokumentasi tambahan: [retrieval dan kalibrasi](docs/retrieval.md),
+[chat, grounding, dan Gemini](docs/chat.md),
 [laporan milestone](docs/milestones.md).
 
 ## Struktur
@@ -40,7 +43,8 @@ Copy-Item .env.example .env
 Keduanya tidak disimpan di Git. `.env.example` menyediakan template tanpa rahasia.
 File `.env` dibaca melalui opsi Uvicorn `--env-file`, bukan otomatis oleh
 `Settings.from_env()`. Environment sistem yang sudah disetel tetap diprioritaskan.
-Tahap ini tidak membutuhkan API key.
+Prediksi gambar dan search tidak membutuhkan API key. Chat memakai
+`GEMINI_API_KEY` jika tersedia, atau fallback deterministik jika kosong.
 
 Model dan database tidak ikut clone. Tanpa artefak asli, startup akan gagal
 dengan pesan artefak yang hilang; menyalin `.env` saja tidak menyediakan model.
@@ -183,6 +187,7 @@ python -m compileall app tests scripts
 python -m pip check
 python scripts/evaluate_search.py --mock
 python scripts/colab_search_smoke_test.py
+python scripts/colab_chat_smoke_test.py
 ```
 
 ## Di luar lingkup

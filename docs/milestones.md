@@ -59,3 +59,38 @@ Status: **IMPLEMENTASI LOKAL SELESAI — VALIDASI COLAB MENUNGGU**.
 - Model, dataset, wayang_db.json asli, dan ChromaDB sumber tidak diubah.
   Sesuai instruksi pengguna, lanjut C setelah gerbang lokal B lulus; klaim
   kelulusan artefak asli tetap menunggu smoke Colab.
+
+## C — Persiapan chat; aktivasi Gemini ditunda
+
+Status: **PERSIAPAN TAHAP 3 — MENUNGGU API KEY / PERMINTAAN LANJUTAN PENGGUNA**.
+Tidak dinyatakan sebagai milestone selesai. Saat pengguna meminta penundaan,
+kode integrasi dan test mock sudah dibuat; pekerjaan itu disimpan tanpa
+mengaktifkan atau memvalidasi API Gemini asli.
+
+- Modul yang disiapkan: `app/chat.py`, `chat_routes.py`, `chat_schemas.py`,
+  `gemini.py`; config/lifespan/environment/dependency diperluas. SDK lokal
+  google-genai **1.75.0**, default model gemini-2.5-flash terverifikasi pada
+  dokumentasi resmi (akses akun tetap perlu diperiksa nanti).
+- `/chat` menggunakan retrieval yang sama. Katalog dirender langsung dari
+  JSON. Pada jalur LLM, hanya pemilihan ID evidence yang diterima; fakta/nama
+  output dirender dari kutipan asli. Tanpa key, fallback tetap bekerja.
+- `/health` menambah gemini_configured dan gemini_client_ready tanpa key/prompt.
+- Test tambahan: chat API, adapter SDK, sumber smoke, konfigurasi, timeout,
+  retry terbatas, quota/key/model error, malformed, prompt injection, sources,
+  dan regresi bahwa endpoint lain tidak memanggil Gemini.
+- Test akhir lokal: **133 passed**, 3 warning baseline. Compileall dan pip
+  check lulus. Transport HTTP mock memeriksa SDK resmi tanpa jaringan berbayar.
+- Evaluation fixture diperluas untuk query chat wajib; threshold tidak berubah.
+- Contoh **MOCK**, dieksekusi tanpa key:
+  [chat katalog](examples/chat-catalog-mock.json),
+  [chat jawaban fallback](examples/chat-answer-mock.json).
+- Smoke Gemini asli: **BELUM DIJALANKAN / DITUNDA**. Skrip
+  `scripts/colab_chat_smoke_test.py` sudah disiapkan untuk environment/Colab
+  Secrets; tidak menyimpan key atau respons sensitif ke file.
+- Dokumentasi: `docs/chat.md`, README, `.env.example`. `.env` lokal tetap
+  diabaikan Git dan tidak ada key asli yang ditulis ke repository.
+- Sisa pekerjaan setelah pengguna siap: konfirmasi akses model pada akun,
+  smoke search/kalibrasi dengan Chroma asli, smoke model gambar acuan, lalu
+  smoke Gemini asli dan perbaikan bila ada ketidakcocokan integrasi.
+- Model, dataset, wayang_db.json asli, dan ChromaDB sumber tidak diubah.
+  Tidak membuat frontend/Streamlit atau deployment.

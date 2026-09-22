@@ -1,0 +1,118 @@
+{
+  "mode": "catalog",
+  "answer": "Sistem memiliki 20 tokoh Wayang Sasak. Silakan pilih salah satu untuk melihat deskripsi, filosofi, atau ciri-cirinya.\n\nJayangrana, Umar Maya, Maktal, Taptanus, Samtanus, Selandir, Baktak, Umar Madi, Smakun, Hermus, Darun Dia, Ibnu Jarah, Kius Nendar, Munigarim, Nursiwan, Lurah, Kembung, Gulanggi, Samardikaran, Gunungan.",
+  "sources": [
+    {
+      "document": "wayang_db.json",
+      "evidence_ids": []
+    }
+  ],
+  "catalog": [
+    {
+      "id": 0,
+      "label": "jayangrana",
+      "nama": "Jayangrana"
+    },
+    {
+      "id": 1,
+      "label": "umar_maya",
+      "nama": "Umar Maya"
+    },
+    {
+      "id": 2,
+      "label": "maktal",
+      "nama": "Maktal"
+    },
+    {
+      "id": 3,
+      "label": "taptanus",
+      "nama": "Taptanus"
+    },
+    {
+      "id": 4,
+      "label": "samtanus",
+      "nama": "Samtanus"
+    },
+    {
+      "id": 5,
+      "label": "selandir",
+      "nama": "Selandir"
+    },
+    {
+      "id": 6,
+      "label": "baktak",
+      "nama": "Baktak"
+    },
+    {
+      "id": 7,
+      "label": "umar_madi",
+      "nama": "Umar Madi"
+    },
+    {
+      "id": 8,
+      "label": "smakun",
+      "nama": "Smakun"
+    },
+    {
+      "id": 9,
+      "label": "hermus",
+      "nama": "Hermus"
+    },
+    {
+      "id": 10,
+      "label": "darun_die",
+      "nama": "Darun Dia"
+    },
+    {
+      "id": 11,
+      "label": "ibnu_jarah",
+      "nama": "Ibnu Jarah"
+    },
+    {
+      "id": 12,
+      "label": "kius_nendar",
+      "nama": "Kius Nendar"
+    },
+    {
+      "id": 13,
+      "label": "munigarim",
+      "nama": "Munigarim"
+    },
+    {
+      "id": 14,
+      "label": "nursiwan",
+      "nama": "Nursiwan"
+    },
+    {
+      "id": 15,
+      "label": "lurah",
+      "nama": "Lurah"
+    },
+    {
+      "id": 16,
+      "label": "kembung",
+      "nama": "Kembung"
+    },
+    {
+      "id": 17,
+      "label": "gulanggi",
+      "nama": "Gulanggi"
+    },
+    {
+      "id": 18,
+      "label": "samardikaran",
+      "nama": "Samardikaran"
+    },
+    {
+      "id": 19,
+      "label": "gunungan",
+      "nama": "Gunungan"
+    }
+  ],
+  "suggestions": [
+    "Jelaskan Jayangrana",
+    "Apa filosofi Gunungan?"
+  ],
+  "llm_used": false,
+  "llm_status": "not_needed"
+}

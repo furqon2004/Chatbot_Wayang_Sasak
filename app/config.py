@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import math
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 
@@ -29,6 +29,13 @@ def _bool_env(name: str, default: bool) -> bool:
     return value == "true"
 
 
+def _timeout_env() -> float:
+    try:
+        return float(os.getenv("GEMINI_TIMEOUT_SECONDS", "15"))
+    except ValueError as exc:
+        raise ValueError("GEMINI_TIMEOUT_SECONDS harus berupa angka") from exc
+
+
 def _positive_int_env(name: str, default: int) -> int:
     try:
         value = int(os.getenv(name, str(default)))
@@ -48,12 +55,22 @@ class Settings:
     collection_name: str = "wayang_sasak"
     search_threshold: float = DEFAULT_SEARCH_THRESHOLD
     normalize_embeddings: bool = False
+    gemini_api_key: str = field(default="", repr=False, compare=False)
+    gemini_model: str = "gemini-2.5-flash"
+    gemini_timeout_seconds: float = 15.0
+    gemini_max_attempts: int = 2
 
     def __post_init__(self):
         if not re.fullmatch(r"[A-Za-z0-9_-]{3,63}", self.collection_name):
             raise ValueError("Nama collection tidak valid")
         if not math.isfinite(self.search_threshold) or not 0 <= self.search_threshold <= 1:
             raise ValueError("Threshold harus dalam rentang 0-1")
+        if not re.fullmatch(r"gemini-[a-zA-Z0-9._-]+", self.gemini_model):
+            raise ValueError("GEMINI_MODEL tidak valid")
+        if not math.isfinite(self.gemini_timeout_seconds) or not 0 < self.gemini_timeout_seconds <= 60:
+            raise ValueError("GEMINI_TIMEOUT_SECONDS harus > 0 dan <= 60")
+        if not 1 <= self.gemini_max_attempts <= 3:
+            raise ValueError("GEMINI_MAX_ATTEMPTS harus 1-3")
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -74,4 +91,8 @@ class Settings:
             collection_name=os.getenv("WAYANG_COLLECTION", "wayang_sasak"),
             search_threshold=_unit_float_env("WAYANG_SEARCH_THRESHOLD", DEFAULT_SEARCH_THRESHOLD),
             normalize_embeddings=_bool_env("WAYANG_NORMALIZE_EMBEDDINGS", False),
+            gemini_api_key=os.getenv("GEMINI_API_KEY", "").strip(),
+            gemini_model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
+            gemini_timeout_seconds=_timeout_env(),
+            gemini_max_attempts=_positive_int_env("GEMINI_MAX_ATTEMPTS", 2),
         )

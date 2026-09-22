@@ -14,3 +14,14 @@ def test_embedding_normalization_requires_explicit_boolean(monkeypatch):
     monkeypatch.setenv("WAYANG_NORMALIZE_EMBEDDINGS", "maybe")
     with pytest.raises(ValueError, match="WAYANG_NORMALIZE_EMBEDDINGS"):
         Settings.from_env()
+
+
+@pytest.mark.parametrize("name,value", [
+    ("GEMINI_MODEL", "invalid/private/path"), ("GEMINI_TIMEOUT_SECONDS", "nan"),
+    ("GEMINI_TIMEOUT_SECONDS", "0"), ("GEMINI_TIMEOUT_SECONDS", "61"),
+    ("GEMINI_MAX_ATTEMPTS", "4"),
+])
+def test_gemini_invalid_settings_fail_without_echoing_value(monkeypatch, name, value):
+    monkeypatch.setenv(name, value)
+    with pytest.raises(ValueError, match=name):
+        Settings.from_env()

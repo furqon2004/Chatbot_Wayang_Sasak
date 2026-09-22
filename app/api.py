@@ -17,6 +17,9 @@ from .catalog import Catalog
 from .retrieval import RetrievalService
 from .retrieval_resources import load_retrieval
 from .search_routes import router as search_router
+from .chat import ChatService
+from .chat_routes import router as chat_router
+from .gemini import load_gemini
 
 LOGGER = logging.getLogger(__name__)
 ALLOWED_CONTENT_TYPES = {"image/jpeg", "image/png", "image/webp"}
@@ -64,6 +67,7 @@ def create_app(
     settings: Settings | None = None,
     resource_loader: Callable[[Settings], ModelResources] = load_resources,
     retrieval_loader=load_retrieval,
+    gemini_loader=load_gemini,
 ) -> FastAPI:
     active_settings = settings or Settings.from_env()
 
@@ -82,6 +86,12 @@ def create_app(
             LOGGER.warning("Retrieval unavailable saat startup")
         semantic = retrieval_resources.semantic if retrieval_resources else None
         app.state.retrieval = RetrievalService(catalog, semantic, active_settings.search_threshold)
+        gemini = None
+        try:
+            gemini = gemini_loader(active_settings)
+        except Exception:
+            LOGGER.warning("Gemini unavailable saat startup")
+        app.state.chat = ChatService(app.state.retrieval, gemini, active_settings.gemini_timeout_seconds)
         app.state.ready = True
         try:
             yield
@@ -89,8 +99,13 @@ def create_app(
             app.state.ready = False
             app.state.resources = None
             app.state.retrieval = None
-            if retrieval_resources is not None:
-                await run_in_threadpool(retrieval_resources.close)
+            app.state.chat = None
+            try:
+                if gemini is not None:
+                    await gemini.close()
+            finally:
+                if retrieval_resources is not None:
+                    await run_in_threadpool(retrieval_resources.close)
             LOGGER.info("Shutdown backend Wayang Sasak")
 
     app = FastAPI(
@@ -100,7 +115,9 @@ def create_app(
     app.state.resources = None
     app.state.settings = active_settings
     app.state.retrieval = None
+    app.state.chat = None
     app.include_router(search_router)
+    app.include_router(chat_router)
 
     @app.get("/health")
     async def health(request: Request):
@@ -118,6 +135,8 @@ def create_app(
             "retrieval_loaded": semantic is not None,
             "collection_name": active_settings.collection_name if semantic is not None else None,
             "document_count": semantic.document_count if semantic is not None else 0,
+            "gemini_configured": bool(active_settings.gemini_api_key),
+            "gemini_client_ready": request.app.state.chat.gemini is not None if request.app.state.chat else False,
         }
 
     @app.post("/predict-image")

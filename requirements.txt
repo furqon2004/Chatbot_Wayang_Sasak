@@ -9,4 +9,5 @@ chromadb>=1.0,<2
 sentence-transformers>=3.4,<4
 rapidfuzz>=3.12,<4
 pydantic>=2.9,<3
+google-genai>=1.30,<2
 

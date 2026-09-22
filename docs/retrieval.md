@@ -90,6 +90,8 @@ Threshold default hanya berdasarkan fixture skor mock untuk menguji mekanisme.
 Nilai terpilih **0.457**: midpoint antara maksimum negatif **0.220** dan
 minimum positif **0.694**, dengan 7 positif dan 4 negatif. Ke-14 kasus
 (termasuk katalog dan input invalid) lulus pada fixture lokal.
+Milestone C memperluasnya menjadi 16 kasus (9 positif, 4 negatif, 2 katalog,
+1 invalid) dengan query chat wajib; gap dan threshold tetap sama.
 Ini bukan validasi relevansi embedding asli. Hasil kalibrasi Colab dicetak ke terminal;
 set `WAYANG_SEARCH_THRESHOLD` ke nilai tersebut dan jalankan smoke lagi tanpa
 `--calibrate` untuk memeriksa konfigurasi deployment. Skrip tidak menyimpan
