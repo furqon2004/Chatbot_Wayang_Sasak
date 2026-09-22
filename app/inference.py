@@ -7,6 +7,7 @@ import torch.nn.functional as F
 from PIL import Image
 
 from .resources import EMBEDDING_DIM, ModelResources
+from .public import display_name as _display_name, public_profile as _profile
 
 
 def probabilities_from_logits(
@@ -15,28 +16,6 @@ def probabilities_from_logits(
     """Rumus model aktif dari Untitled33.ipynb: softmax(logits / T)."""
     logits_scaled = logits_raw / temperature
     return torch.softmax(logits_scaled, dim=-1)
-
-
-def _display_name(character: dict[str, Any], fallback: str) -> str:
-    for key in ("nama", "name", "nama_tokoh"):
-        if character.get(key):
-            return str(character[key])
-    return fallback.replace("_", " ").title()
-
-
-def _profile(character: dict[str, Any]) -> dict[str, Any]:
-    metadata = {"id", "label", "slug", "class_name", "nama", "name", "nama_tokoh"}
-    profile = {key: value for key, value in character.items() if key not in metadata}
-    defaults: dict[str, Any] = {
-        "deskripsi": "",
-        "deskripsi_lengkap": "",
-        "filosofi": "",
-        "ciri_ciri": [],
-        "kata_kunci": [],
-    }
-    for key, value in defaults.items():
-        profile.setdefault(key, value)
-    return profile
 
 
 def predict_image(image: Image.Image, resources: ModelResources) -> dict[str, Any]:

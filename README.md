@@ -105,6 +105,14 @@ mengembalikan:
 - `top_3`: tiga ID/label/nama beserta probabilitas desimal 0–1;
 - `profil`: profil tokoh top-1 dari `wayang_db.json`.
 
+Profil publik hanya berisi `deskripsi`, `deskripsi_lengkap`, `filosofi`,
+`ciri_ciri`, `kata_kunci`, dan `gambar_utama` bila aman tersedia. Field training,
+embedding, metadata internal, serta daftar semua gambar tidak lagi diekspos.
+Gambar publik menerima path relatif `dataset_asli/...` atau HTTPS tanpa token;
+path absolut lokal/Drive tidak dikirim. Parser mapping mendukung object nested
+`id2label`/`label2id` (termasuk arah legacy terbalik), `id_to_label`/`label_to_id`,
+dan `idx_to_class`/`class_to_idx`, dengan urutan resmi tetap divalidasi.
+
 `confidence` adalah probabilitas keluaran model, bukan kepastian objektif.
 Angka dibulatkan menjadi enam desimal hanya pada respons API.
 

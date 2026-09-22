@@ -89,6 +89,17 @@ def validate_required_artifacts(settings: Settings) -> None:
 
 
 def parse_label_mapping(raw: Any) -> dict[int, str]:
+    # Nama field legacy bisa terbalik; arah ditentukan dari isi, bukan nama key.
+    if isinstance(raw, dict):
+        nested = [raw[key] for key in (
+            "id2label", "label2id", "id_to_label", "label_to_id",
+            "idx_to_class", "class_to_idx",
+        ) if isinstance(raw.get(key), (dict, list))]
+        if nested:
+            mappings = [parse_label_mapping(value) for value in nested]
+            if any(mapping != mappings[0] for mapping in mappings[1:]):
+                raise ResourceValidationError("Mapping nested tidak konsisten")
+            return mappings[0]
     parsed: dict[int, str] = {}
     if isinstance(raw, list):
         parsed = {index: str(label) for index, label in enumerate(raw)}
