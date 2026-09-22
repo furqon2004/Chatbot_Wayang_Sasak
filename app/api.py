@@ -13,6 +13,10 @@ from starlette.concurrency import run_in_threadpool
 from .config import Settings
 from .inference import predict_image
 from .resources import ModelResources, load_resources
+from .catalog import Catalog
+from .retrieval import RetrievalService
+from .retrieval_resources import load_retrieval
+from .search_routes import router as search_router
 
 LOGGER = logging.getLogger(__name__)
 ALLOWED_CONTENT_TYPES = {"image/jpeg", "image/png", "image/webp"}
@@ -59,6 +63,7 @@ def _decode_image(data: bytes) -> Image.Image:
 def create_app(
     settings: Settings | None = None,
     resource_loader: Callable[[Settings], ModelResources] = load_resources,
+    retrieval_loader=load_retrieval,
 ) -> FastAPI:
     active_settings = settings or Settings.from_env()
 
@@ -68,12 +73,24 @@ def create_app(
         app.state.ready = False
         app.state.resources = None
         app.state.resources = await run_in_threadpool(resource_loader, active_settings)
+        catalog = Catalog(app.state.resources.labels, app.state.resources.characters)
+        retrieval_resources = None
+        try:
+            retrieval_resources = await run_in_threadpool(retrieval_loader, active_settings, catalog)
+        except Exception:
+            # Search gagal terkontrol tanpa menonaktifkan prediksi gambar/katalog.
+            LOGGER.warning("Retrieval unavailable saat startup")
+        semantic = retrieval_resources.semantic if retrieval_resources else None
+        app.state.retrieval = RetrievalService(catalog, semantic, active_settings.search_threshold)
         app.state.ready = True
         try:
             yield
         finally:
             app.state.ready = False
             app.state.resources = None
+            app.state.retrieval = None
+            if retrieval_resources is not None:
+                await run_in_threadpool(retrieval_resources.close)
             LOGGER.info("Shutdown backend Wayang Sasak")
 
     app = FastAPI(
@@ -82,12 +99,15 @@ def create_app(
     app.state.ready = False
     app.state.resources = None
     app.state.settings = active_settings
+    app.state.retrieval = None
+    app.include_router(search_router)
 
     @app.get("/health")
     async def health(request: Request):
         resources = request.app.state.resources
         if not request.app.state.ready or resources is None:
             raise HTTPException(status_code=503, detail="Model belum siap")
+        semantic = request.app.state.retrieval.semantic if request.app.state.retrieval else None
         return {
             "status": "ok",
             "model_loaded": True,
@@ -95,6 +115,9 @@ def create_app(
             "device": resources.device.type,
             "num_classes": len(resources.labels),
             "knowledge_base_loaded": len(resources.characters) == 20,
+            "retrieval_loaded": semantic is not None,
+            "collection_name": active_settings.collection_name if semantic is not None else None,
+            "document_count": semantic.document_count if semantic is not None else 0,
         }
 
     @app.post("/predict-image")
@@ -116,7 +139,7 @@ def create_app(
         except HTTPException:
             raise
         except Exception:
-            LOGGER.exception("Inferensi gambar gagal")
+            LOGGER.error("Inferensi gambar gagal: internal")
             raise HTTPException(status_code=500, detail="Inferensi gambar gagal") from None
         finally:
             await file.close()

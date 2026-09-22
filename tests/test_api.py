@@ -33,6 +33,9 @@ def test_health_and_resources_are_loaded_only_once(settings, fake_resources):
         "device": "cpu",
         "num_classes": 20,
         "knowledge_base_loaded": True,
+        "retrieval_loaded": False,
+        "collection_name": None,
+        "document_count": 0,
     }
 
 
@@ -132,6 +135,7 @@ def test_upload_limit_returns_413(tmp_path, fake_resources):
         model_dir=tmp_path / "model",
         knowledge_base_path=tmp_path / "db.json",
         max_upload_bytes=8,
+        chroma_dir=tmp_path / "chroma-missing",
     )
     app = create_app(settings, lambda _: fake_resources)
     with TestClient(app) as client:

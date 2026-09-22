@@ -1,0 +1,16 @@
+[
+  {"query": "Siapa tokoh utama Wayang Sasak?", "mode": "answer", "id": 0, "mock_semantic": {"0": 0.91, "1": 0.15}},
+  {"query": "Apa fungsi Gunungan?", "mode": "answer", "id": 19, "mock_semantic": {"19": 0.89, "0": 0.2}},
+  {"query": "Jelaskan Jayagrana", "mode": "answer", "id": 0, "mock_semantic": {"0": 0.81}},
+  {"query": "Apa filosofi Gununggan?", "mode": "answer", "id": 19, "mock_semantic": {"19": 0.8}},
+  {"query": "Jelaskan Umar Maya", "mode": "answer", "id": 1, "mock_semantic": {"1": 0.7}},
+  {"query": "Tokoh berselendang ungu sintetis", "mode": "answer", "id": 2, "mock_semantic": {"2": 0.76}, "mock_only": true},
+  {"query": "Apa filosofi lentera sintetis?", "mode": "answer", "id": 2, "mock_semantic": {"2": 0.73}, "mock_only": true},
+  {"query": "Coba berikan saya contoh tokoh Wayang Saksak?", "mode": "catalog", "mock_semantic": {}},
+  {"query": "Tokoh Wayang Sasak apa saja?", "mode": "catalog", "mock_semantic": {}},
+  {"query": "Siapa presiden Jepang?", "mode": "fallback_catalog", "mock_semantic": {"0": 0.32}},
+  {"query": "Bagaimana harga bitcoin besok?", "mode": "fallback_catalog", "mock_semantic": {"19": 0.27}},
+  {"query": "sesuatu", "mode": "fallback_catalog", "mock_semantic": {"3": 0.4}},
+  {"query": "xyzqvv abczzz", "mode": "fallback_catalog", "mock_semantic": {"0": 0.2}},
+  {"query": "", "mode": "invalid", "mock_semantic": {}}
+]

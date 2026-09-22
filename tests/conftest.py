@@ -67,6 +67,7 @@ def settings(tmp_path: Path) -> Settings:
         model_dir=tmp_path / "model",
         knowledge_base_path=tmp_path / "wayang_db.json",
         max_upload_bytes=1024 * 1024,
+        chroma_dir=tmp_path / "chroma-missing",
     )
 
 

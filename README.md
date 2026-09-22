@@ -1,8 +1,12 @@
-# Backend Prediksi Gambar Wayang Sasak — Tahap 1
+# Backend Wayang Sasak
 
 Backend FastAPI ini memuat `CLIPVisionModelWithProjection`, image processor,
 linear classifier, label mapping, dan basis pengetahuan tepat satu kali saat
-startup. Lingkupnya hanya `GET /health` dan `POST /predict-image`.
+startup. Kontrak Tahap 1 (`GET /health`, `POST /predict-image`) dipertahankan;
+Tahap 2 menambahkan `POST /search`.
+
+Dokumentasi tambahan: [retrieval dan kalibrasi](docs/retrieval.md),
+[laporan milestone](docs/milestones.md).
 
 ## Struktur
 
@@ -74,8 +78,8 @@ export WAYANG_MAX_UPLOAD_BYTES=10485760
 
 ### Temperature scaling
 
-Implementasi saat ini memakai rumus berikut, yang menurut dokumentasi awal
-berasal dari notebook training `Untitled33.ipynb`:
+Implementasi memakai rumus berikut dari `Untitled33.ipynb`. Status awal di
+`todolist.md` menyatakan rumus ini telah diverifikasi di Colab sebelumnya:
 
 ```python
 logits_raw = classifier(image_embeddings)
@@ -166,13 +170,22 @@ Skrip memakai artefak asli, memeriksa `/health`, lalu membandingkan ID top-1,
 urutan dan probabilitas top-3, confidence, serta margin. Hasil aktual baru
 dicetak saat dijalankan; dokumentasi ini tidak mengarang output model.
 
-Notebook `Untitled33.ipynb` tidak disertakan dalam repository. Asal rumus
-di atas tercatat di dokumentasi sebelumnya dan belum dapat diperiksa
-ulang hanya dari hasil clone. Gunakan `--reference-json` dengan keluaran notebook
+Notebook `Untitled33.ipynb` tidak disertakan dalam repository. Validasi Colab
+sebelumnya diterima sebagai baseline pengguna, tetapi eksekusi ulang sesi ini
+tetap memerlukan artefak asli. Gunakan `--reference-json` dengan keluaran notebook
 untuk memverifikasi kecocokan dengan evaluasi asli; pembanding langsung saja
 hanya memeriksa konsistensi dua implementasi dengan rumus yang sama.
 
+## Validasi tambahan
+
+```bash
+python -m compileall app tests scripts
+python -m pip check
+python scripts/evaluate_search.py --mock
+python scripts/colab_search_smoke_test.py
+```
+
 ## Di luar lingkup
 
-Tahap ini belum mencakup hybrid retrieval, `/search`, Gemini, `/chat`, ChromaDB,
-atau Streamlit. Dataset, model, JSON, dan ChromaDB tidak ditulis atau diubah.
+Frontend/Streamlit, training, rebuild embedding, dan deployment produksi tidak
+termasuk. Dataset, model, JSON, dan ChromaDB sumber tidak ditulis atau diubah.
