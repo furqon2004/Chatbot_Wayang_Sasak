@@ -41,10 +41,17 @@ def _decode_image(data: bytes) -> Image.Image:
         with Image.open(io.BytesIO(data)) as source:
             if source.format not in ALLOWED_IMAGE_FORMATS:
                 raise HTTPException(status_code=415, detail="Format gambar tidak didukung")
+            if (
+                Image.MAX_IMAGE_PIXELS is not None
+                and source.width * source.height > Image.MAX_IMAGE_PIXELS
+            ):
+                raise HTTPException(status_code=413, detail="Resolusi gambar terlalu besar")
             source.load()
             return source.convert("RGB")
     except HTTPException:
         raise
+    except Image.DecompressionBombError as exc:
+        raise HTTPException(status_code=413, detail="Resolusi gambar terlalu besar") from exc
     except (UnidentifiedImageError, OSError, ValueError) as exc:
         raise HTTPException(status_code=400, detail="File rusak atau bukan gambar valid") from exc
 
@@ -102,7 +109,10 @@ def create_app(
         try:
             data = await _read_limited(file, active_settings.max_upload_bytes)
             image = await run_in_threadpool(_decode_image, data)
-            result = await run_in_threadpool(predict_image, image, resources)
+            try:
+                result = await run_in_threadpool(predict_image, image, resources)
+            finally:
+                image.close()
         except HTTPException:
             raise
         except Exception:

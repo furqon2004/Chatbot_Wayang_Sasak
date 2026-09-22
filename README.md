@@ -20,6 +20,38 @@ main.py
 
 ## Instalasi dan menjalankan server
 
+### Setelah clone di Windows (PowerShell)
+
+Gunakan Python 3.10 atau lebih baru dan environment terpisah:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+Copy-Item .env.example .env
+# Edit .env: arahkan model dan database ke artefak asli jika menjalankan lokal.
+.\.venv\Scripts\python.exe -m uvicorn main:app --env-file .env --host 127.0.0.1 --port 8000
+```
+
+`.venv` adalah folder dependensi Python; `.env` adalah file konfigurasi.
+Keduanya tidak disimpan di Git. `.env.example` menyediakan template tanpa rahasia.
+File `.env` dibaca melalui opsi Uvicorn `--env-file`, bukan otomatis oleh
+`Settings.from_env()`. Environment sistem yang sudah disetel tetap diprioritaskan.
+Tahap ini tidak membutuhkan API key.
+
+Model dan database tidak ikut clone. Tanpa artefak asli, startup akan gagal
+dengan pesan artefak yang hilang; menyalin `.env` saja tidak menyediakan model.
+Untuk unit test dengan model tiruan, artefak asli dan `.env` tidak diperlukan:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest -q
+```
+
+Gunakan satu worker sebagai awal agar model tidak diduplikasi ke RAM/VRAM.
+Rentang versi dependency belum merupakan lockfile; performa dan kompatibilitas
+deployment perlu divalidasi pada environment Colab yang digunakan.
+
+### Google Colab
+
 Di Google Colab, mount Drive lebih dulu, pindah ke folder source code ini, lalu:
 
 ```bash
@@ -42,7 +74,8 @@ export WAYANG_MAX_UPLOAD_BYTES=10485760
 
 ### Temperature scaling
 
-Rumus model aktif telah diverifikasi dari notebook training `Untitled33.ipynb`:
+Implementasi saat ini memakai rumus berikut, yang menurut dokumentasi awal
+berasal dari notebook training `Untitled33.ipynb`:
 
 ```python
 logits_raw = classifier(image_embeddings)
@@ -80,7 +113,7 @@ Error utama:
 | HTTP | Kondisi |
 |---:|---|
 | 400 | upload kosong, rusak, atau bukan data gambar valid |
-| 413 | ukuran melewati `WAYANG_MAX_UPLOAD_BYTES` |
+| 413 | ukuran melewati `WAYANG_MAX_UPLOAD_BYTES` atau resolusi gambar terlalu besar |
 | 415 | MIME/format bukan JPEG, PNG, atau WebP |
 | 422 | field multipart `file` tidak diberikan |
 | 500 | kegagalan inferensi internal (tanpa traceback pada respons) |
@@ -103,6 +136,9 @@ dengan model asli.
 
 Setelah Drive di-mount, jalankan validasi artefak asli dengan sebuah gambar:
 
+Pasang `requirements-dev.txt` untuk smoke test karena skrip memakai `httpx`
+melalui `TestClient`. Skrip ini membaca environment sistem, bukan file `.env`.
+
 ```bash
 python scripts/colab_smoke_test.py \
   --image /content/path/gambar-acuan.jpg \
@@ -121,6 +157,12 @@ dengan field `prediksi.id`, `prediksi.confidence`, `prediksi.margin`, serta
 Skrip memakai artefak asli, memeriksa `/health`, lalu membandingkan ID top-1,
 urutan dan probabilitas top-3, confidence, serta margin. Hasil aktual baru
 dicetak saat dijalankan; dokumentasi ini tidak mengarang output model.
+
+Notebook `Untitled33.ipynb` tidak disertakan dalam repository. Asal rumus
+di atas tercatat di dokumentasi sebelumnya dan belum dapat diperiksa
+ulang hanya dari hasil clone. Gunakan `--reference-json` dengan keluaran notebook
+untuk memverifikasi kecocokan dengan evaluasi asli; pembanding langsung saja
+hanya memeriksa konsistensi dua implementasi dengan rumus yang sama.
 
 ## Di luar lingkup
 

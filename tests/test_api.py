@@ -37,7 +37,8 @@ def test_health_and_resources_are_loaded_only_once(settings, fake_resources):
 
 
 @pytest.mark.parametrize(
-    ("image_format", "mime_type"), [("PNG", "image/png"), ("JPEG", "image/jpeg")]
+    ("image_format", "mime_type"),
+    [("PNG", "image/png"), ("JPEG", "image/jpeg"), ("WEBP", "image/webp")]
 )
 def test_predict_valid_images_matches_explicit_mock_reference(
     settings, fake_resources, image_format, mime_type
@@ -110,6 +111,20 @@ def test_missing_file_returns_422(settings, fake_resources):
     with TestClient(app) as client:
         response = client.post("/predict-image")
     assert response.status_code == 422
+
+
+@pytest.mark.parametrize("pixel_limit", [100, 50])
+def test_large_resolution_returns_413(settings, fake_resources, monkeypatch, pixel_limit):
+    from PIL import Image
+
+    data = image_bytes("PNG")
+    monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", pixel_limit)
+    app = create_app(settings, lambda _: fake_resources)
+    with TestClient(app) as client:
+        response = client.post(
+            "/predict-image", files={"file": ("large.png", data, "image/png")}
+        )
+    assert response.status_code == 413
 
 
 def test_upload_limit_returns_413(tmp_path, fake_resources):
