@@ -3,6 +3,17 @@ import pytest
 from app.config import Settings
 
 
+def test_default_calibrated_threshold(monkeypatch, settings):
+    monkeypatch.delenv("WAYANG_SEARCH_THRESHOLD", raising=False)
+    assert settings.search_threshold == 0.5590755322575569
+    assert Settings.from_env().search_threshold == 0.5590755322575569
+
+
+def test_threshold_environment_override(monkeypatch):
+    monkeypatch.setenv("WAYANG_SEARCH_THRESHOLD", "0.61")
+    assert Settings.from_env().search_threshold == 0.61
+
+
 @pytest.mark.parametrize("value", ["nan", "inf", "-0.1", "1.1", "abc"])
 def test_threshold_environment_validation(monkeypatch, value):
     monkeypatch.setenv("WAYANG_SEARCH_THRESHOLD", value)

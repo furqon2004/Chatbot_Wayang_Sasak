@@ -9,7 +9,8 @@ from pathlib import Path
 
 DEFAULT_ROOT = Path("/content/drive/MyDrive/skripsi_wayang")
 EMBEDDING_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
-DEFAULT_SEARCH_THRESHOLD = 0.457  # midpoint gap fixture: (0.220 + 0.694) / 2
+# Initial calibration artefak asli Colab; belum memakai holdout terpisah.
+DEFAULT_SEARCH_THRESHOLD = 0.5590755322575569
 
 
 def _unit_float_env(name: str, default: float) -> float:

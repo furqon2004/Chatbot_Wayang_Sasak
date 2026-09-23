@@ -1,64 +1,85 @@
-# Validasi Tahap 2 — 23 September 2026
+﻿# Validasi Tahap 2 — 23 September 2026
 
-**IMPLEMENTASI LOKAL SELESAI — VALIDASI COLAB MENUNGGU**
+**TAHAP 2 SELESAI — VALIDASI ARTEFAK ASLI COLAB LULUS SETELAH KALIBRASI**
 
-Workspace berada di branch `main`. Pada awal sesi, implementasi Tahap 2,
-modul persiapan Tahap 3, dan test keduanya sudah tersedia. README.md dan
-todolist.md sudah memiliki perubahan pengguna. README tidak diedit sesi ini;
-todolist hanya dikoreksi pada baseline 25 menjadi 23. Tidak ada commit/push.
+Branch: `feat/stage2-search`. Hasil artefak asli di bawah berasal dari
+validasi Google Colab yang dilaporkan pengguna; artefak tersebut tidak tersedia
+untuk dijalankan ulang di workspace Windows. Finalisasi lokal tidak melakukan
+commit/push.
 
-Audit Tahap 1 mempertahankan loader model, processor, classifier, dan JSON
-sekali per lifespan; `.eval()`, `torch.inference_mode()`, normalisasi L2,
-softmax(logits / temperature), CPU fallback, mapping nested legacy, serta
-ranking sebelum pembulatan. `app/resources.py` dan `app/inference.py` tidak diubah.
+## Hasil artefak asli Google Colab
 
-Perbaikan sesi ini: aplikasi default tidak mendaftarkan `/chat`, tidak memuat
-client Gemini dan tidak membaca GEMINI_API_KEY; katalog mensyaratkan nama dari
-JSON; lexical menambahkan fuzzy keyword; smoke Colab memverifikasi seluruh
-isi katalog, top-1, deduplikasi, evidence, dan formula 55/45 pada respons HTTP.
-Kode Tahap 3 lama tetap disimpan, dengan DI eksplisit untuk test lama.
+| Parameter / pemeriksaan | Hasil |
+| --- | --- |
+| Chroma metric | `cosine` |
+| `document_count` | 47 |
+| Threshold kalibrasi | `0.5590755322575569` |
+| `negative_max` | `0.49093165576457987` |
+| `positive_min` | `0.6272194087505341` |
+| `positive_count` | 8 |
+| `negative_count` | 4 |
+| Evaluation setelah kalibrasi | 15/15 case lulus |
+| Hash `wayang_db.json` dan ChromaDB sebelum/sesudah | Tidak berubah |
 
-## Hasil lokal (mock)
+Threshold merupakan midpoint antara maksimum negatif dan minimum positif.
+Nilai ini masih **initial calibrated threshold**: query calibration dan
+evaluation belum menggunakan holdout terpisah. Kelulusan 15/15 belum menjadi
+bukti generalisasi pada query baru. Validasi lanjutan perlu holdout independen
+yang tidak digunakan untuk memilih threshold, termasuk query ambigu dan
+variasi bahasa pengguna.
 
-Interpreter: `.venv/Scripts/python.exe`. Python sistem tidak memiliki pytest.
+## Konfigurasi dan batas perubahan
+
+`app/config.py` menetapkan `DEFAULT_SEARCH_THRESHOLD = 0.5590755322575569`
+sebagai default `Settings.search_threshold`. `Settings.from_env()` tetap
+menerima override melalui `WAYANG_SEARCH_THRESHOLD`; `.env.example` memuat
+nilai default tersebut tanpa rahasia. Retrieval service dan smoke script
+menggunakan konfigurasi, tanpa literal threshold baru di keduanya.
+
+Bobot hybrid tetap **55% semantic + 45% lexical**. Model, processor,
+classifier, hasil inferensi gambar, JSON, ChromaDB, dan dataset tidak diubah.
+Aplikasi default tidak mendaftarkan `/chat`; finalisasi ini hanya mencatat
+kebutuhan keamanan Tahap 3 di `todolist.md`, tanpa implementasi Gemini/chat.
+
+Profil publik `ciri_ciri` tetap string: input string dipertahankan, list
+dinormalisasi menjadi string, null/missing menjadi string kosong.
+`kata_kunci` tetap list. Smoke memilih teks ciri maksimal 200 karakter dan
+mencetak report JSON sebelum pemeriksaan; kegagalan dicetak sebagai ringkasan
+expected/actual serta skor bila tersedia, lalu keluar non-zero.
+
+## Hasil pemeriksaan lokal finalisasi
+
+Interpreter: `.venv/Scripts/python.exe`.
 
 | Pemeriksaan | Hasil |
 | --- | --- |
-| Regresi Tahap 1: test_api, test_resources, test_colab_smoke, test_public | 33 lulus |
-| Seluruh `pytest -q`, termasuk test mock lama Tahap 3 | 140 lulus, 3 warning |
+| Seluruh `pytest`, termasuk test mock lama Tahap 3 | 165 lulus, 3 warning |
 | `compileall app tests scripts evaluation main.py` | Lulus |
 | `pip check` | No broken requirements found |
-| `scripts/evaluate_search.py --mock` | 16/16 kasus lulus |
 
-Warning: dua deprecation dependency TestClient dan satu warning Pillow yang
-sengaja dipicu test batas resolusi. Tidak ada panggilan Gemini asli.
+Regression test mencakup default Settings, override environment, query
+`sesuatu` menjadi `fallback_catalog`, serta query relevan terlemah pada fixture
+tetap `answer`. Replay batas skor Colab juga memeriksa bahwa `negative_max`
+ditolak dan `positive_min` diterima; replay ini menggunakan mock ranking,
+bukan reproduksi embedding atau identitas query minimum asli.
+Kalibrasi fixture sintetis tetap diuji terpisah dari default artefak asli.
 
-Query **“Coba berikan saya contoh tokoh Wayang Saksak?”** diuji melalui HTTP
-dengan mock collection/embedder: mode `catalog`, tepat 20 ID unik berurutan
-0–19, nama sama dengan fixture JSON (termasuk Darun Dia), tanpa encode semantic.
-Ini bukti perilaku lokal, bukan validasi isi wayang_db.json asli.
+Warning berasal dari dua deprecation dependency TestClient dan satu warning
+Pillow yang sengaja dipicu test batas resolusi. Tidak ada panggilan Gemini asli.
 
-Threshold 0.457 masih hasil kalibrasi fixture: maksimum negatif 0.220,
-minimum positif 0.694. Bobot tetap 55% semantic + 45% lexical.
+## Menjalankan ulang di Colab
 
-## Validasi Colab yang masih diperlukan
-
-Model, JSON asli, dan ChromaDB tidak tersedia di workspace Windows.
-Smoke artefak asli **belum dijalankan**; format metadata, metric, normalisasi
-embedding, ranking dan threshold produksi belum dapat dipastikan.
-Tidak ada model/dataset/wayang_db.json/ChromaDB asli yang diubah.
-
-Jalankan dari root proyek di Colab setelah Drive tersedia:
+Jalankan dari root proyek setelah Drive tersedia. Pastikan environment tidak
+menyimpan override threshold lama:
 
 ```bash
-python scripts/colab_search_smoke_test.py --calibrate
-# Set WAYANG_SEARCH_THRESHOLD sesuai hasil kalibrasi, lalu:
+export WAYANG_SEARCH_THRESHOLD=0.5590755322575569
 python scripts/colab_search_smoke_test.py
-python scripts/colab_smoke_test.py --image /content/path/gambar-acuan.jpg --tolerance 1e-5
+# Hanya bila hendak mengukur ulang kalibrasi:
+python scripts/colab_search_smoke_test.py --calibrate
 ```
 
-Skrip search memakai snapshot sementara agar PersistentClient tidak menulis
-ke database sumber, serta membandingkan hash JSON/Chroma sebelum dan sesudah.
-Hentikan penulis database lain saat snapshot diambil. Skrip akan gagal jika
-metric/metadata tidak dikenali, count bukan 47, ranking tidak cocok, atau skor
-positif/negatif tidak terpisah saat kalibrasi; kelulusan tidak dipaksakan.
+Smoke memakai snapshot sementara agar PersistentClient tidak menulis ke
+ChromaDB sumber dan membandingkan hash JSON/Chroma sebelum dan sesudah.
+Hentikan penulis database lain saat snapshot diambil. Kelulusan evaluasi
+tidak dipaksakan dengan mengubah expected case atau bobot ranking.

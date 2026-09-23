@@ -78,14 +78,44 @@ def test_metadata_requires_unambiguous_catalog_match():
 
 
 def test_threshold_calibration_and_evaluation():
-    from app.config import DEFAULT_SEARCH_THRESHOLD
     cases = json.loads(CASES_PATH.read_text(encoding="utf-8"))
     service = mock_service()
     threshold, stats = calibrate_threshold(service, cases)
-    assert DEFAULT_SEARCH_THRESHOLD == pytest.approx(threshold)
+    # Kalibrasi fixture sintetis terpisah dari default hasil artefak asli.
+    assert threshold == pytest.approx(0.457)
     assert stats["negative_max"] < threshold < stats["positive_min"]
     service.threshold = threshold
     assert all(row["passed"] for row in evaluate(service, cases))
+
+
+@pytest.mark.parametrize("query,score,expected_mode", [
+    ("sesuatu", 0.49093165576457987, "fallback_catalog"),
+    ("Jelaskan Jayangrana", 0.6272194087505341, "answer"),
+])
+def test_initial_calibrated_threshold_with_recorded_score_bounds(
+    settings, monkeypatch, query, score, expected_mode
+):
+    service = mock_service(threshold=settings.search_threshold)
+    # Replay batas skor Colab, bukan reproduksi embedding/identitas query asli.
+    hit = service.rank("jelaskan jayangrana")[0].model_copy(update={"score": score})
+    monkeypatch.setattr(service, "rank", lambda *_: [hit])
+    response = service.search(query)
+    assert response.mode == expected_mode
+    if expected_mode == "answer":
+        assert response.results[0].score == score
+
+
+def test_default_threshold_preserves_mock_relevance():
+    service = mock_service()
+    assert service.search("sesuatu").mode == "fallback_catalog"
+    cases = json.loads(CASES_PATH.read_text(encoding="utf-8"))
+    weakest = min(
+        (case for case in cases if case["mode"] == "answer"),
+        key=lambda case: service.rank(normalize_query(case["query"]))[0].score,
+    )
+    response = service.search(weakest["query"])
+    assert response.mode == "answer"
+    assert response.results[0].id == weakest["id"]
 
 
 def test_threshold_boundary():

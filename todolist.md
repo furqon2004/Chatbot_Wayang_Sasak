@@ -419,6 +419,10 @@ Alur wajib:
 
 ## 3.2 Grounding dan anti-hallucination
 
+- [ ] Jangan menganggap kemunculan kata “Wayang Sasak” saja sebagai izin untuk seluruh prompt; periksa maksud setiap permintaan.
+- [ ] Pada permintaan campuran, abaikan instruksi di luar domain dan jawab hanya bagian Wayang Sasak yang didukung evidence.
+- [ ] Perlakukan output LLM sebagai data tidak tepercaya; jangan mengeksekusinya sebagai kode, HTML, atau perintah.
+- [ ] Uji prompt injection, termasuk penyisipan kata “Wayang Sasak”, permintaan campuran, serta output kode/HTML/perintah berbahaya. Ini kebutuhan Tahap 3, belum diimplementasikan pada finalisasi Tahap 2.
 - [ ] Buat system instruction yang mewajibkan jawaban hanya berdasarkan context sistem.
 - [ ] Instruksikan model untuk mempertahankan ejaan nama tokoh dan fakta persis dari context.
 - [ ] Jika context tidak cukup, model harus menyatakan informasi tidak tersedia.
