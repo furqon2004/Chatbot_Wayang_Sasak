@@ -10,6 +10,7 @@ from conftest import image_bytes
 def test_profile_allowlist_and_copy():
     character = {
         "deskripsi": "Profil publik", "ciri_ciri": ["mahkota"],
+        "kata_kunci": ["raja"],
         "gambar_utama": "dataset_asli/jayangrana/1.PNG",
         "gambar_training": ["/content/private"], "gambar_asli": ["private"],
         "jumlah_gambar_training": 24, "embedding": [1], "metadata_training": {},
@@ -18,7 +19,9 @@ def test_profile_allowlist_and_copy():
     assert set(result) == {
         "deskripsi", "deskripsi_lengkap", "filosofi", "ciri_ciri", "kata_kunci", "gambar_utama"
     }
-    result["ciri_ciri"].append("baru")
+    assert result["ciri_ciri"] == "mahkota"
+    result["kata_kunci"].append("baru")
+    assert character["kata_kunci"] == ["raja"]
     assert character["ciri_ciri"] == ["mahkota"]
 
 

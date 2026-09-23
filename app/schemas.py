@@ -22,7 +22,7 @@ class PublicProfile(BaseModel):
     deskripsi: str = ""
     deskripsi_lengkap: str = ""
     filosofi: str = ""
-    ciri_ciri: list[str] = Field(default_factory=list)
+    ciri_ciri: str = ""
     kata_kunci: list[str] = Field(default_factory=list)
     gambar_utama: str | None = None
 

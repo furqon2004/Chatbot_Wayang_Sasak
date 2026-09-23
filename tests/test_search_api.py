@@ -5,6 +5,48 @@ from fastapi.testclient import TestClient
 
 from app.api import create_app
 from evaluation.mock_search import mock_service
+from app.resources import parse_knowledge_base
+from conftest import image_bytes
+
+
+@pytest.mark.parametrize("traits,expected", [
+    ({"ciri_ciri": "Tidak memakai perhiasan ... dan membawa keris."},
+     "Tidak memakai perhiasan ... dan membawa keris."),
+    ({"ciri_ciri": ["Tidak memakai perhiasan", "membawa keris"]},
+     "Tidak memakai perhiasan; membawa keris"),
+    ({"ciri_ciri": None}, ""),
+    ({}, ""),
+    ({"ciri_ciri": []}, ""),
+])
+def test_profile_compatibility_search_and_prediction(settings, fake_resources, traits, expected):
+    character = fake_resources.characters[19]
+    character.pop("ciri_ciri")
+    character.update(traits, gambar_utama="dataset_asli/gunungan/1.PNG")
+    # Lewati parser DB sebelum kedua endpoint, tanpa mengubah input sumber.
+    fake_resources.characters = parse_knowledge_base(
+        list(fake_resources.characters.values()), fake_resources.labels
+    )
+    bundle = SimpleNamespace(semantic=mock_service().semantic, close=lambda: None)
+    with TestClient(create_app(settings, lambda _: fake_resources, lambda *_: bundle)) as client:
+        search = client.post("/search", json={"query": "Apa fungsi Gunungan?"})
+        prediction = client.post("/predict-image", files={
+            "file": ("sample.png", image_bytes("PNG"), "image/png")
+        })
+    assert search.status_code == prediction.status_code == 200
+    hit = search.json()["results"][0]
+    assert hit["id"] == prediction.json()["prediksi"]["id"] == 19
+    assert hit["profil"] == prediction.json()["profil"] == {
+        "deskripsi": "Deskripsi gunungan",
+        "deskripsi_lengkap": "Deskripsi lengkap gunungan",
+        "filosofi": "Filosofi gunungan",
+        "ciri_ciri": expected,
+        "kata_kunci": ["gunungan"],
+        "gambar_utama": "dataset_asli/gunungan/1.PNG",
+    }
+    if "ciri_ciri" in traits:
+        assert character["ciri_ciri"] == traits["ciri_ciri"]
+    else:
+        assert "ciri_ciri" not in character
 
 
 @pytest.fixture

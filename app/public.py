@@ -33,9 +33,17 @@ def public_image(value: Any) -> str | None:
 def public_profile(character: dict[str, Any]) -> dict[str, Any]:
     defaults: dict[str, Any] = {
         "deskripsi": "", "deskripsi_lengkap": "", "filosofi": "",
-        "ciri_ciri": [], "kata_kunci": [],
+        "ciri_ciri": "", "kata_kunci": [],
     }
     profile = {key: deepcopy(character.get(key, default)) for key, default in defaults.items()}
+    # Kontrak Tahap 1 tetap string, termasuk untuk DB lama berbentuk list.
+    traits = profile["ciri_ciri"]
+    if isinstance(traits, list):
+        profile["ciri_ciri"] = "; ".join(
+            item.strip() for item in traits if isinstance(item, str) and item.strip()
+        )
+    elif not isinstance(traits, str):
+        profile["ciri_ciri"] = ""
     image = public_image(character.get("gambar_utama"))
     if image is not None:
         profile["gambar_utama"] = image
