@@ -9,6 +9,10 @@ class Catalog:
     def __init__(self, labels: dict[int, str], characters: dict[int, dict]):
         if set(labels) != set(range(20)) or set(characters) != set(labels):
             raise ValueError("Katalog harus memuat tepat 20 ID")
+        for character in characters.values():
+            if not any(isinstance(character.get(key), str) and character[key].strip()
+                       for key in ("nama", "name", "nama_tokoh")):
+                raise ValueError("Nama katalog wajib tersedia dalam JSON")
         self.labels = labels
         self.characters = characters
         self.items = [CatalogItem(

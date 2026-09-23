@@ -1,5 +1,10 @@
 # Tahap 2: kontrak dan validasi retrieval
 
+Aplikasi default hanya mengaktifkan `/health`, `/predict-image`, dan `/search`.
+`/chat` tidak terdaftar dan `Settings.from_env()` tidak membaca GEMINI_API_KEY.
+Modul/test Tahap 3 yang telah ada dipertahankan; jalur dependency injection
+eksplisitnya hanya dipakai test lama. Tidak ada panggilan Gemini asli.
+
 `POST /search` menerima `{"query":"Apa fungsi Gunungan?","top_k":3}`.
 Query 1–1000 karakter, minimal satu huruf/angka; top_k integer 1–5.
 Respons Pydantic memiliki discriminator `mode`:
@@ -62,7 +67,9 @@ Skor ini ukuran ranking, bukan probabilitas. Query mengambil min(count,
 max(20, 8*top_k)) chunk lalu max semantic score per tokoh. Lexical memakai
 coverage token query, bukan panjang/frekuensi deskripsi: exact nama/label/alias
 = 1; fuzzy nama (ratio >= 88) = 0.9*ratio/100; coverage keyword *0.85;
-coverage deskripsi/filosofi/ciri *0.65. Nilai terbesar menjadi lexical_score.
+coverage deskripsi/filosofi/ciri *0.65. Fuzzy keyword memakai token minimal
+5 karakter, ratio >= 88, dan coverage berbobot similarity *0.75 (lebih rendah
+dari keyword exact). Nilai terbesar menjadi lexical_score.
 Test mencakup Jayagrana/Gununggan dan string acak; ambang fuzzy ini aturan
 terbatas untuk nama, bukan ambang relevansi semantic.
 
@@ -88,10 +95,8 @@ gagal; threshold tidak dipaksakan. Bobot 55/45 tidak diubah.
 
 Threshold default hanya berdasarkan fixture skor mock untuk menguji mekanisme.
 Nilai terpilih **0.457**: midpoint antara maksimum negatif **0.220** dan
-minimum positif **0.694**, dengan 7 positif dan 4 negatif. Ke-14 kasus
-(termasuk katalog dan input invalid) lulus pada fixture lokal.
-Milestone C memperluasnya menjadi 16 kasus (9 positif, 4 negatif, 2 katalog,
-1 invalid) dengan query chat wajib; gap dan threshold tetap sama.
+minimum positif **0.694**. Evaluation set yang tersedia memuat 16 kasus
+(9 positif, 4 negatif, 2 katalog, 1 invalid).
 Ini bukan validasi relevansi embedding asli. Hasil kalibrasi Colab dicetak ke terminal;
 set `WAYANG_SEARCH_THRESHOLD` ke nilai tersebut dan jalankan smoke lagi tanpa
 `--calibrate` untuk memeriksa konfigurasi deployment. Skrip tidak menyimpan

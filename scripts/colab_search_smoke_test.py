@@ -40,6 +40,23 @@ def actual_cases(catalog):
     return cases
 
 
+def assert_search_payload(payload, case, catalog):
+    """Periksa kontrak HTTP terhadap JSON yang dimuat, termasuk seluruh katalog."""
+    assert payload["mode"] == case["mode"], "Mode tidak cocok"
+    if payload["mode"] in {"catalog", "fallback_catalog"}:
+        expected = [item.model_dump(exclude_none=True) for item in catalog.items]
+        assert payload["catalog"] == expected, "Katalog bukan 20 entri JSON resmi"
+        assert [row["id"] for row in payload["catalog"]] == list(range(20))
+    else:
+        results = payload["results"]
+        assert len({row["id"] for row in results}) == len(results), "Tokoh duplikat"
+        if "id" in case:
+            assert results[0]["id"] == case["id"], "Top-1 tidak cocok"
+        for row in results:
+            assert abs(row["score"] - (0.55 * row["semantic_score"] + 0.45 * row["lexical_score"])) < 1e-9
+            assert row["evidence"], "Evidence kosong"
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--calibrate", action="store_true", help="Hitung threshold dengan artefak asli untuk sesi smoke ini")
@@ -68,7 +85,7 @@ def main():
                     assert response.status_code == 422
                 else:
                     response.raise_for_status()
-                    assert response.json()["mode"] == case["mode"]
+                    assert_search_payload(response.json(), case, service.catalog)
             print(json.dumps({"metric": service.semantic.metric, "document_count": service.semantic.document_count,
                               "case_count": len(report), "threshold": service.threshold}))
     finally:

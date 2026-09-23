@@ -91,7 +91,8 @@ class Settings:
             collection_name=os.getenv("WAYANG_COLLECTION", "wayang_sasak"),
             search_threshold=_unit_float_env("WAYANG_SEARCH_THRESHOLD", DEFAULT_SEARCH_THRESHOLD),
             normalize_embeddings=_bool_env("WAYANG_NORMALIZE_EMBEDDINGS", False),
-            gemini_api_key=os.getenv("GEMINI_API_KEY", "").strip(),
+            # Tahap 2 tidak membaca secret Gemini; integrasi lama hanya lewat DI.
+            gemini_api_key="",
             gemini_model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
             gemini_timeout_seconds=_timeout_env(),
             gemini_max_attempts=_positive_int_env("GEMINI_MAX_ATTEMPTS", 2),

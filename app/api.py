@@ -17,9 +17,6 @@ from .catalog import Catalog
 from .retrieval import RetrievalService
 from .retrieval_resources import load_retrieval
 from .search_routes import router as search_router
-from .chat import ChatService
-from .chat_routes import router as chat_router
-from .gemini import load_gemini
 
 LOGGER = logging.getLogger(__name__)
 ALLOWED_CONTENT_TYPES = {"image/jpeg", "image/png", "image/webp"}
@@ -67,7 +64,7 @@ def create_app(
     settings: Settings | None = None,
     resource_loader: Callable[[Settings], ModelResources] = load_resources,
     retrieval_loader=load_retrieval,
-    gemini_loader=load_gemini,
+    gemini_loader=None,
 ) -> FastAPI:
     active_settings = settings or Settings.from_env()
 
@@ -88,10 +85,13 @@ def create_app(
         app.state.retrieval = RetrievalService(catalog, semantic, active_settings.search_threshold)
         gemini = None
         try:
-            gemini = gemini_loader(active_settings)
+            if gemini_loader is not None:
+                gemini = gemini_loader(active_settings)
         except Exception:
             LOGGER.warning("Gemini unavailable saat startup")
-        app.state.chat = ChatService(app.state.retrieval, gemini, active_settings.gemini_timeout_seconds)
+        if gemini_loader is not None:
+            from .chat import ChatService
+            app.state.chat = ChatService(app.state.retrieval, gemini, active_settings.gemini_timeout_seconds)
         app.state.ready = True
         try:
             yield
@@ -117,7 +117,10 @@ def create_app(
     app.state.retrieval = None
     app.state.chat = None
     app.include_router(search_router)
-    app.include_router(chat_router)
+    # Modul Tahap 3 lama dipertahankan, tetapi aplikasi default hanya Tahap 1–2.
+    if gemini_loader is not None:
+        from .chat_routes import router as chat_router
+        app.include_router(chat_router)
 
     @app.get("/health")
     async def health(request: Request):
