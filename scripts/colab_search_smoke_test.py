@@ -33,11 +33,38 @@ def actual_cases(catalog):
     cases = [row for row in json.loads(path.read_text(encoding="utf-8")) if not row.get("mock_only")]
     # Ciri tambahan dipilih dari JSON asli, tidak menebak fakta tokoh.
     for item in catalog.items:
-        traits = catalog.profiles[item.id].get("ciri_ciri", [])
-        if traits and isinstance(traits[0], str) and traits[0].strip():
-            cases.append({"query": f"Jelaskan ciri {item.nama}: {traits[0][:200]}", "mode": "answer", "id": item.id})
+        traits = catalog.profiles[item.id].get("ciri_ciri")
+        if isinstance(traits, str):
+            trait = traits.strip()
+        elif isinstance(traits, list):
+            trait = next((value.strip() for value in traits
+                          if isinstance(value, str) and value.strip()), "")
+        else:
+            trait = ""
+        if trait:
+            cases.append({"query": f"Jelaskan ciri {item.nama}: {trait[:200]}", "mode": "answer", "id": item.id})
             break
     return cases
+
+
+def check_report(report, cases):
+    # Report evaluator hanya berisi diagnosis ringkas, bukan profil/dokumen.
+    print(json.dumps(report, ensure_ascii=False, indent=2), flush=True)
+    failed = []
+    for row, case in zip(report, cases):
+        if not row["passed"]:
+            summary = {
+                "query": row["query"],
+                "expected_mode": case["mode"], "expected_id": case.get("id"),
+                "actual_mode": row["mode"], "actual_top_id": row["top_id"],
+            }
+            for key in ("score", "semantic_score", "lexical_score"):
+                if key in row:
+                    summary[key] = row[key]
+            failed.append(summary)
+    if failed:
+        print(json.dumps({"failed_cases": failed}, ensure_ascii=False, indent=2), flush=True)
+        raise SystemExit(1)
 
 
 def assert_search_payload(payload, case, catalog):
@@ -58,6 +85,8 @@ def assert_search_payload(payload, case, catalog):
 
 
 def main():
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser()
     parser.add_argument("--calibrate", action="store_true", help="Hitung threshold dengan artefak asli untuk sesi smoke ini")
     parser.add_argument("--expected-count", type=int, default=47)
@@ -78,7 +107,7 @@ def main():
                 service.threshold = threshold
                 print(json.dumps({"scope": "ARTEFAK ASLI", "threshold": threshold, "calibration": stats}))
             report = evaluate(service, cases)
-            assert all(row["passed"] for row in report), "Evaluation artefak asli belum lulus"
+            check_report(report, cases)
             for case in cases:
                 response = client.post("/search", json={"query": case["query"]})
                 if case["mode"] == "invalid":

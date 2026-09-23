@@ -33,6 +33,7 @@ def calibrate_threshold(service, cases: list[dict]) -> tuple[float, dict]:
 def evaluate(service, cases: list[dict]) -> list[dict]:
     report = []
     for case in cases:
+        scores = {}
         try:
             request = SearchRequest(query=case["query"])
         except ValidationError:
@@ -42,8 +43,12 @@ def evaluate(service, cases: list[dict]) -> list[dict]:
             response = service.search(request.query)
             mode = response.mode
             top_id = response.results[0].id if mode == "answer" else None
+            if mode == "answer":
+                top = response.results[0]
+                scores = {"score": top.score, "semantic_score": top.semantic_score,
+                          "lexical_score": top.lexical_score}
             passed = mode == case["mode"] and ("id" not in case or top_id == case["id"])
             if mode in {"catalog", "fallback_catalog"}:
                 passed = passed and [item.id for item in response.catalog] == list(range(20))
-        report.append({"query": case["query"], "mode": mode, "top_id": top_id, "passed": passed})
+        report.append({"query": case["query"], "mode": mode, "top_id": top_id, "passed": passed, **scores})
     return report
