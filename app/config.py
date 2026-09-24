@@ -5,6 +5,7 @@ import math
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
+from urllib.parse import urlsplit
 
 
 DEFAULT_ROOT = Path("/content/drive/MyDrive/skripsi_wayang")
@@ -48,6 +49,54 @@ def _positive_int_env(name: str, default: int) -> int:
 
 
 @dataclass(frozen=True, slots=True)
+class SecuritySettings:
+    production: bool = False
+    service_token: str = field(default="", repr=False, compare=False)
+    allowed_hosts: tuple[str, ...] = ("localhost", "127.0.0.1", "testserver")
+    cors_origins: tuple[str, ...] = ()
+    requests_per_minute: int = 60
+    concurrency: int = 2
+    max_pixels: int = 16_000_000
+    body_timeout: float = 15
+    public_docs: bool = False
+    strict_artifacts: bool = False  # DI mocks may contain fewer than 47 chunks.
+
+    def __post_init__(self):
+        if self.production and (len(self.service_token) < 32 or not self.allowed_hosts):
+            raise ValueError("Production membutuhkan service token kuat dan allowed hosts")
+        if any(not host or any(c in host for c in "*/\\\r\n") for host in self.allowed_hosts):
+            raise ValueError("Allowed hosts harus eksplisit")
+        if any(c.isspace() for c in self.service_token):
+            raise ValueError("Service token tidak valid")
+        for origin in self.cors_origins:
+            parsed = urlsplit(origin)
+            if (parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.path
+                    or parsed.query or parsed.fragment or parsed.username or '*' in origin
+                    or (self.production and parsed.scheme != "https")):
+                raise ValueError("CORS membutuhkan origin eksplisit; production harus HTTPS")
+        if not 1 <= self.requests_per_minute <= 10000 or not 1 <= self.concurrency <= 32:
+            raise ValueError("Rate limit/concurrency tidak valid")
+        if not 1 <= self.max_pixels <= 40_000_000 or not 0 < self.body_timeout <= 60:
+            raise ValueError("Batas upload tidak valid")
+
+    @classmethod
+    def from_env(cls):
+        mode = os.getenv("WAYANG_ENV", "development")
+        if mode not in {"development", "production"}:
+            raise ValueError("WAYANG_ENV tidak valid")
+        def csv(name, default):
+            return tuple(v.strip() for v in os.getenv(name, default).split(",") if v.strip())
+        return cls(production=mode == "production",
+            service_token=os.getenv("WAYANG_SERVICE_TOKEN", ""),
+            allowed_hosts=csv("WAYANG_ALLOWED_HOSTS", "localhost,127.0.0.1,testserver"),
+            cors_origins=csv("WAYANG_CORS_ORIGINS", ""),
+            requests_per_minute=_positive_int_env("WAYANG_RATE_LIMIT", 60),
+            concurrency=_positive_int_env("WAYANG_MAX_CONCURRENCY", 2),
+            max_pixels=_positive_int_env("WAYANG_MAX_PIXELS", 16_000_000),
+            public_docs=_bool_env("WAYANG_PUBLIC_DOCS", False), strict_artifacts=True)
+
+
+@dataclass(frozen=True, slots=True)
 class Settings:
     model_dir: Path
     knowledge_base_path: Path
@@ -60,6 +109,10 @@ class Settings:
     gemini_model: str = "gemini-2.5-flash"
     gemini_timeout_seconds: float = 15.0
     gemini_max_attempts: int = 2
+    chat_enabled: bool = False
+    security: SecuritySettings = field(default_factory=SecuritySettings)
+    embedding_local_only: bool = False
+    embedding_revision: str | None = None
 
     def __post_init__(self):
         if not re.fullmatch(r"[A-Za-z0-9_-]{3,63}", self.collection_name):
@@ -75,6 +128,7 @@ class Settings:
 
     @classmethod
     def from_env(cls) -> "Settings":
+        chat_enabled = _bool_env("WAYANG_ENABLE_CHAT", False)
         return cls(
             model_dir=Path(
                 os.getenv(
@@ -92,8 +146,12 @@ class Settings:
             collection_name=os.getenv("WAYANG_COLLECTION", "wayang_sasak"),
             search_threshold=_unit_float_env("WAYANG_SEARCH_THRESHOLD", DEFAULT_SEARCH_THRESHOLD),
             normalize_embeddings=_bool_env("WAYANG_NORMALIZE_EMBEDDINGS", False),
-            # Tahap 2 tidak membaca secret Gemini; integrasi lama hanya lewat DI.
-            gemini_api_key="",
+            embedding_local_only=_bool_env("WAYANG_EMBEDDING_LOCAL_ONLY", False),
+            embedding_revision=os.getenv("WAYANG_EMBEDDING_REVISION", "").strip() or None,
+            # Read server environment only when explicitly enabling Stage 3.
+            gemini_api_key=os.getenv("GEMINI_API_KEY", "").strip() if chat_enabled else "",
+            chat_enabled=chat_enabled,
+            security=SecuritySettings.from_env(),
             gemini_model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
             gemini_timeout_seconds=_timeout_env(),
             gemini_max_attempts=_positive_int_env("GEMINI_MAX_ATTEMPTS", 2),

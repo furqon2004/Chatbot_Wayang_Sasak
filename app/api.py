@@ -7,16 +7,21 @@ from contextlib import asynccontextmanager
 from typing import Callable
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from PIL import Image, UnidentifiedImageError
 from starlette.concurrency import run_in_threadpool
+from starlette.middleware.cors import CORSMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from .config import Settings
 from .inference import predict_image
-from .resources import ModelResources, load_resources
+from .resources import ModelResources, ResourceValidationError, load_resources
 from .catalog import Catalog
 from .retrieval import RetrievalService
 from .retrieval_resources import load_retrieval
 from .search_routes import router as search_router
+from .security_middleware import SecurityMiddleware
 
 LOGGER = logging.getLogger(__name__)
 ALLOWED_CONTENT_TYPES = {"image/jpeg", "image/png", "image/webp"}
@@ -40,21 +45,21 @@ async def _read_limited(upload: UploadFile, limit: int) -> bytes:
     return b"".join(chunks)
 
 
-def _decode_image(data: bytes) -> Image.Image:
+def _decode_image(data: bytes, max_pixels: int = 16_000_000) -> Image.Image:
     try:
-        with Image.open(io.BytesIO(data)) as source:
+        with io.BytesIO(data) as buffer, Image.open(buffer, formats=tuple(ALLOWED_IMAGE_FORMATS)) as source:
             if source.format not in ALLOWED_IMAGE_FORMATS:
                 raise HTTPException(status_code=415, detail="Format gambar tidak didukung")
             if (
-                Image.MAX_IMAGE_PIXELS is not None
-                and source.width * source.height > Image.MAX_IMAGE_PIXELS
+                source.width * source.height > max_pixels
+                or (Image.MAX_IMAGE_PIXELS is not None and source.width * source.height > Image.MAX_IMAGE_PIXELS)
             ):
                 raise HTTPException(status_code=413, detail="Resolusi gambar terlalu besar")
             source.load()
             return source.convert("RGB")
     except HTTPException:
         raise
-    except Image.DecompressionBombError as exc:
+    except (Image.DecompressionBombError, Image.DecompressionBombWarning) as exc:
         raise HTTPException(status_code=413, detail="Resolusi gambar terlalu besar") from exc
     except (UnidentifiedImageError, OSError, ValueError) as exc:
         raise HTTPException(status_code=400, detail="File rusak atau bukan gambar valid") from exc
@@ -65,8 +70,14 @@ def create_app(
     resource_loader: Callable[[Settings], ModelResources] = load_resources,
     retrieval_loader=load_retrieval,
     gemini_loader=None,
+    rate_limiter=None,
+    capacity=None,
 ) -> FastAPI:
     active_settings = settings or Settings.from_env()
+    active_gemini_loader = gemini_loader
+    if active_gemini_loader is None and active_settings.chat_enabled:
+        from .gemini import load_gemini
+        active_gemini_loader = load_gemini
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -79,17 +90,21 @@ def create_app(
         try:
             retrieval_resources = await run_in_threadpool(retrieval_loader, active_settings, catalog)
         except Exception:
+            if active_settings.security.production:
+                app.state.resources = None
+                LOGGER.warning("Production retrieval startup validation failed")
+                raise ResourceValidationError("Resource retrieval production tidak tersedia") from None
             # Search gagal terkontrol tanpa menonaktifkan prediksi gambar/katalog.
             LOGGER.warning("Retrieval unavailable saat startup")
         semantic = retrieval_resources.semantic if retrieval_resources else None
         app.state.retrieval = RetrievalService(catalog, semantic, active_settings.search_threshold)
         gemini = None
         try:
-            if gemini_loader is not None:
-                gemini = gemini_loader(active_settings)
+            if active_gemini_loader is not None:
+                gemini = active_gemini_loader(active_settings)
         except Exception:
             LOGGER.warning("Gemini unavailable saat startup")
-        if gemini_loader is not None:
+        if active_gemini_loader is not None:
             from .chat import ChatService
             app.state.chat = ChatService(app.state.retrieval, gemini, active_settings.gemini_timeout_seconds)
         app.state.ready = True
@@ -109,8 +124,23 @@ def create_app(
             LOGGER.info("Shutdown backend Wayang Sasak")
 
     app = FastAPI(
-        title="API Prediksi Wayang Sasak", version="1.0.0", lifespan=lifespan
+        title="API Prediksi Wayang Sasak", version="1.0.0", lifespan=lifespan, debug=False,
+        docs_url="/docs" if not active_settings.security.production or active_settings.security.public_docs else None,
+        redoc_url=None,
+        openapi_url="/openapi.json" if not active_settings.security.production or active_settings.security.public_docs else None,
     )
+    if active_settings.security.cors_origins:
+        app.add_middleware(CORSMiddleware, allow_origins=list(active_settings.security.cors_origins),
+                           allow_methods=["GET", "POST"], allow_headers=["Authorization", "Content-Type"],
+                           allow_credentials=False)
+    if active_settings.security.production:
+        app.add_middleware(TrustedHostMiddleware, allowed_hosts=list(active_settings.security.allowed_hosts))
+    app.add_middleware(SecurityMiddleware, settings=active_settings.security,
+                       max_upload_bytes=active_settings.max_upload_bytes, limiter=rate_limiter, capacity=capacity)
+
+    @app.exception_handler(RequestValidationError)
+    async def invalid_request(request, exc):
+        return JSONResponse({"detail": "Input tidak valid", "request_id": request.state.request_id}, status_code=422)
     app.state.ready = False
     app.state.resources = None
     app.state.settings = active_settings
@@ -118,7 +148,7 @@ def create_app(
     app.state.chat = None
     app.include_router(search_router)
     # Modul Tahap 3 lama dipertahankan, tetapi aplikasi default hanya Tahap 1–2.
-    if gemini_loader is not None:
+    if active_gemini_loader is not None:
         from .chat_routes import router as chat_router
         app.include_router(chat_router)
 
@@ -128,6 +158,8 @@ def create_app(
         if not request.app.state.ready or resources is None:
             raise HTTPException(status_code=503, detail="Model belum siap")
         semantic = request.app.state.retrieval.semantic if request.app.state.retrieval else None
+        if active_settings.security.production:
+            return {"status": "ok"}
         return {
             "status": "ok",
             "model_loaded": True,
@@ -147,13 +179,12 @@ def create_app(
         resources = request.app.state.resources
         if not request.app.state.ready or resources is None:
             raise HTTPException(status_code=503, detail="Model belum siap")
-        if file.content_type not in ALLOWED_CONTENT_TYPES:
-            raise HTTPException(status_code=415, detail="Tipe file harus JPEG, PNG, atau WebP")
-
         started = time.perf_counter()
         try:
+            if file.content_type not in ALLOWED_CONTENT_TYPES:
+                raise HTTPException(status_code=415, detail="Tipe file harus JPEG, PNG, atau WebP")
             data = await _read_limited(file, active_settings.max_upload_bytes)
-            image = await run_in_threadpool(_decode_image, data)
+            image = await run_in_threadpool(_decode_image, data, active_settings.security.max_pixels)
             try:
                 result = await run_in_threadpool(predict_image, image, resources)
             finally:

@@ -39,7 +39,7 @@ def test_persistent_client_only_receives_snapshot(settings, tmp_path, monkeypatc
 
     monkeypatch.setitem(sys.modules, "chromadb", SimpleNamespace(PersistentClient=Client))
     monkeypatch.setitem(sys.modules, "chromadb.config", SimpleNamespace(Settings=lambda **kw: kw))
-    monkeypatch.setitem(sys.modules, "sentence_transformers", SimpleNamespace(SentenceTransformer=lambda *_: object()))
+    monkeypatch.setitem(sys.modules, "sentence_transformers", SimpleNamespace(SentenceTransformer=lambda *_, **kw: object()))
     resources = load_retrieval(replace(settings, chroma_dir=source), mock_service().catalog)
     resources.close()
     assert original.read_bytes() == b"original read-only fixture"

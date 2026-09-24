@@ -13,6 +13,37 @@ from app.config import Settings
 from app.resources import ModelResources, OFFICIAL_LABELS
 
 
+@pytest.fixture(autouse=True)
+def isolated_environment_and_no_network(monkeypatch):
+    import os
+    import socket
+    import threading
+    # Replace mapping without reading/copying any real environment credential.
+    monkeypatch.setattr(os, "environ", {})
+    local = threading.local()
+    original_connect, original_pair = socket.socket.connect, socket.socketpair
+    def connect(sock, address):
+        # Windows asyncio implements its internal wakeup pipe with socketpair.
+        if getattr(local, "internal_pair", False):
+            return original_connect(sock, address)
+        raise AssertionError("Network forbidden in unit tests")
+    def socketpair(*args, **kwargs):
+        local.internal_pair = True
+        try:
+            return original_pair(*args, **kwargs)
+        finally:
+            local.internal_pair = False
+    def denied(*args, **kwargs):
+        raise AssertionError("Network forbidden in unit tests")
+    monkeypatch.setattr(socket, "socketpair", socketpair)
+    monkeypatch.setattr(socket.socket, "connect", connect)
+    monkeypatch.setattr(socket.socket, "connect_ex", denied)
+    monkeypatch.setattr(socket, "create_connection", denied)
+    monkeypatch.setattr(socket, "getaddrinfo", denied)
+    monkeypatch.setattr(socket, "gethostbyname", denied)
+    monkeypatch.setattr(socket.socket, "sendto", denied)
+
+
 class FakeProcessor:
     def __init__(self) -> None:
         self.seen_modes: list[str] = []

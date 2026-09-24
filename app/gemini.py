@@ -4,9 +4,13 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import random
+import time
 
-from .chat_schemas import EvidenceSelection
+from .chat_schemas import EvidenceSelection, PromptEvidence
 from .config import Settings
+from .security import Capacity, CircuitBreaker, event
+from .query_normalizer import unsafe_evidence
 
 LOGGER = logging.getLogger(__name__)
 SYSTEM_INSTRUCTION = """Anda penyusun jawaban Wayang Sasak berbasis evidence sistem.
@@ -52,12 +56,19 @@ def error_category(exc: Exception) -> str:
 
 
 class GeminiClient:
-    def __init__(self, settings: Settings, client=None, sleep=asyncio.sleep):
+    def __init__(self, settings: Settings, client=None, sleep=asyncio.sleep,
+                 jitter=None, breaker=None, capacity=None, clock=time.monotonic):
         from google import genai
         from google.genai import types
 
         self.settings = settings
         self.sleep = sleep
+        # Injected SDK defaults to deterministic scheduling; real SDK uses jitter.
+        self.jitter = jitter if jitter is not None else (
+            (lambda: 0.0) if client is not None else lambda: random.SystemRandom().uniform(0, 0.25))
+        self.clock = clock
+        self.breaker = breaker or CircuitBreaker(clock=clock)
+        self.capacity = capacity or Capacity(1)
         self.client = client or genai.Client(
             api_key=settings.gemini_api_key,
             http_options=types.HttpOptions(
@@ -67,31 +78,69 @@ class GeminiClient:
         )
 
     async def select(self, query: str, evidence: list[dict]) -> str:
-        from google.genai import types
+        if not self.breaker.available():
+            event(endpoint="/chat", category="circuit_open", llm_used=False)
+            raise GeminiFailure("unavailable")
+        if not self.capacity.acquire():
+            raise GeminiFailure("unavailable")
+        try:
+            if not self.breaker.available():
+                raise GeminiFailure("unavailable")
+            return await asyncio.wait_for(self._select(query, evidence), timeout=self.settings.gemini_timeout_seconds)
+        except asyncio.TimeoutError:
+            self.breaker.failed()
+            raise GeminiFailure("timeout") from None
+        finally:
+            self.capacity.release()
 
+    async def _select(self, query: str, evidence: list[dict]) -> str:
+        from google.genai import types
+        try:
+            payload = build_prompt(query, evidence)
+        except ValueError:
+            raise GeminiFailure("invalid_response") from None
+        deadline = self.clock() + self.settings.gemini_timeout_seconds
         for attempt in range(self.settings.gemini_max_attempts):
+            if self.clock() >= deadline:
+                raise GeminiFailure("timeout")
             try:
                 response = await self.client.aio.models.generate_content(
                     model=self.settings.gemini_model,
-                    contents=json.dumps({"query": query, "evidence": evidence}, ensure_ascii=False),
+                    contents=payload,
                     config=types.GenerateContentConfig(
                         system_instruction=SYSTEM_INSTRUCTION,
                         response_mime_type="application/json",
                         response_schema=EvidenceSelection,
                         temperature=0,
                         max_output_tokens=1024,
+                        tools=[],
+                        automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
                         # Nonaktifkan thinking pada keluarga target agar output ID tidak terpotong.
                         thinking_config=types.ThinkingConfig(thinking_budget=0)
                         if self.settings.gemini_model.startswith("gemini-2.5-flash") else None,
                     ),
                 )
+                feedback = getattr(response, "prompt_feedback", None)
+                blocked = getattr(feedback, "block_reason", None)
+                candidates = getattr(response, "candidates", None) or []
+                if (blocked and str(blocked).split(".")[-1] != "BLOCK_REASON_UNSPECIFIED") or any(
+                    str(getattr(candidate, "finish_reason", "STOP")).split(".")[-1] != "STOP"
+                    for candidate in candidates
+                ):
+                    raise GeminiFailure("invalid_response")
+                self.breaker.succeeded()
                 return response.text or ""
             except Exception as exc:
-                category = error_category(exc)
+                category = exc.category if isinstance(exc, GeminiFailure) else error_category(exc)
                 if category == "unavailable" and attempt + 1 < self.settings.gemini_max_attempts:
-                    LOGGER.warning("Gemini retry: unavailable")
-                    await self.sleep(0.5 * (2 ** attempt))
+                    delay = min(2.0, 0.5 * (2 ** attempt)) + min(0.25, max(0, self.jitter()))
+                    if self.clock() + delay >= deadline:
+                        self.breaker.failed()
+                        raise GeminiFailure("timeout") from None
+                    event(endpoint="/chat", category="retry", llm_used=False)
+                    await self.sleep(delay)
                     continue
+                self.breaker.failed(immediate=category in {"invalid_key", "rate_limit"})
                 raise GeminiFailure(category) from None
         raise GeminiFailure("unavailable")
 
@@ -106,3 +155,15 @@ def load_gemini(settings: Settings) -> GeminiClient | None:
     if not settings.gemini_api_key:
         return None
     return GeminiClient(settings)
+
+
+def build_prompt(query: str, evidence: list[dict]) -> str:
+    if len(query) > 1000 or len(evidence) > 12 or unsafe_evidence(query):
+        raise ValueError("Context tidak valid")
+    rows = [PromptEvidence.model_validate(row).model_dump() for row in evidence]
+    if any(unsafe_evidence(row["text"]) or unsafe_evidence(row["nama"]) for row in rows):
+        raise ValueError("Evidence tidak aman")
+    payload = json.dumps({"untrusted_query": query, "untrusted_evidence": rows}, ensure_ascii=False)
+    if len(payload.encode("utf-8")) > 8000:
+        raise ValueError("Context terlalu besar")
+    return payload

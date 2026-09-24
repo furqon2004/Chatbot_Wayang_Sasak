@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException, Request
 
 from .chat_schemas import ChatRequest, ChatResponse
 from .semantic import RetrievalUnavailable
+from .security import event
 
 router = APIRouter()
 LOGGER = logging.getLogger(__name__)
@@ -15,7 +16,9 @@ async def chat(payload: ChatRequest, request: Request):
     if service is None:
         raise HTTPException(status_code=503, detail="Layanan chat belum siap")
     try:
-        return await service.chat(payload.message)
+        response = await service.chat(payload.message)
+        event(endpoint="/chat", mode=response.mode, category=response.llm_status, llm_used=response.llm_used)
+        return response
     except RetrievalUnavailable:
         raise HTTPException(status_code=503, detail="Retrieval belum siap") from None
     except Exception:

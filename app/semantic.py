@@ -59,6 +59,8 @@ def metadata_class_id(metadata: dict, catalog: Catalog) -> int:
             candidates.add(candidate)
         elif normalize_query(text) in names:
             candidates.add(names[normalize_query(text)])
+        elif key in {"class_id", "label_id", "tokoh_id", "label", "slug", "class_name", "nama", "nama_tokoh", "tokoh"}:
+            raise RetrievalUnavailable("Identitas metadata tidak resmi")
     if len(candidates) != 1:
         raise RetrievalUnavailable("Metadata chunk tidak dapat dipetakan secara unik")
     return candidates.pop()

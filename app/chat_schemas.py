@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -18,7 +18,17 @@ class ChatRequest(BaseModel):
 class EvidenceSelection(BaseModel):
     model_config = ConfigDict(extra="forbid")
     # Tidak menerima teks fakta bebas dari LLM. Kosong berarti bukti tak cukup.
-    evidence_ids: list[str] = Field(max_length=6)
+    evidence_ids: list[Annotated[str, Field(strict=True, max_length=100,
+        pattern=r"^profile:\d{1,2}:(deskripsi|deskripsi_lengkap|filosofi|ciri_ciri|kata_kunci):\d{1,4}$")]] = Field(max_length=6)
+
+
+class PromptEvidence(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    evidence_id: str = Field(max_length=100)
+    id: int = Field(ge=0, le=19)
+    label: str = Field(max_length=80)
+    nama: str = Field(max_length=120)
+    text: str = Field(min_length=1, max_length=500)
 
 
 class ChatSource(BaseModel):
@@ -36,10 +46,19 @@ LLMStatus = Literal[
 
 
 class ChatResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     mode: Literal["answer", "catalog", "fallback_catalog"]
-    answer: str
+    answer: str = Field(max_length=8000)
     sources: list[ChatSource]
     catalog: list[CatalogItem] | None = Field(default=None, min_length=20, max_length=20)
     suggestions: list[str] = Field(default_factory=list)
     llm_used: bool = False
     llm_status: LLMStatus = "not_needed"
+    scope_notice: str | None = Field(default=None, max_length=250)
+
+    @field_validator("catalog")
+    @classmethod
+    def official_catalog(cls, value):
+        if value is not None and [item.id for item in value] != list(range(20)):
+            raise ValueError("Katalog tidak valid")
+        return value

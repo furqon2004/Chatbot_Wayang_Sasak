@@ -5,4 +5,15 @@ __pycache__/
 .env
 .env.*
 !.env.example
+.audit-venv/
+security-scan-results/
+.coverage
+htmlcov/
+*.log
+model*/
+dataset*/
+chroma*/
+wayang_db.json
+*.pt
+*.safetensors
 
