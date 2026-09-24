@@ -49,6 +49,7 @@ def test_security_guard_prevents_llm_before_retrieval(query):
     retrieval.search = forbidden
     reply = asyncio.run(ChatService(retrieval, llm).chat(query))
     assert reply.mode == "fallback_catalog" and not reply.llm_used and not llm.calls
+    assert reply.llm_status == "not_needed"
     assert [item.id for item in reply.catalog] == list(range(20))
 
 

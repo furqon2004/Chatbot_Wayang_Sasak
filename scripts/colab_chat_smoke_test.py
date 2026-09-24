@@ -4,13 +4,14 @@ from __future__ import annotations
 import json
 import os
 import sys
+from collections import Counter
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from fastapi.testclient import TestClient
 
 from app.api import create_app
-from app.chat import evidence_context
+from app.chat import evidence_context, rendered_evidence
 from app.config import Settings
 from scripts.colab_search_smoke_test import fingerprints
 
@@ -33,13 +34,20 @@ def _secret_from_colab():
 def _assert_sources(payload, retrieval_result):
     expected = {row["evidence_id"]: row for row in evidence_context(retrieval_result.results)}
     assert payload["sources"], "Source kosong"
+    selected = []
     for source in payload["sources"]:
         assert source["evidence_ids"], "Source answer tanpa evidence"
         for evidence_id in source["evidence_ids"]:
             assert evidence_id in expected, "Source tidak dikenal"
             row = expected[evidence_id]
             assert row["id"] == source["id"] and row["label"] == source["label"]
-            assert row["text"] in payload["answer"], "Kutipan tidak cocok source"
+            selected.append(row)
+    prefix = "Berdasarkan basis pengetahuan Wayang Sasak:\n\n"
+    assert payload["answer"].startswith(prefix), "Pembuka jawaban tidak valid"
+    paragraphs = [f'{row["nama"]}: {text}' for row, text in rendered_evidence(selected)]
+    assert paragraphs, "Kutipan kosong"
+    assert Counter(payload["answer"][len(prefix):].split("\n\n")) == Counter(
+        "\n\n".join(paragraphs).split("\n\n")), "Kutipan tidak cocok source"
 
 
 def main():

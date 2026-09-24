@@ -5,6 +5,7 @@ import json
 import logging
 import time
 import math
+import re
 
 from pydantic import ValidationError
 from starlette.concurrency import run_in_threadpool
@@ -68,13 +69,45 @@ def catalog_reply(result: CatalogSearch, status="not_needed") -> ChatResponse:
     )
 
 
+def display_excerpt(text: str) -> str:
+    """Render capped evidence without a possibly incomplete final word."""
+    if len(text) < 500:
+        return text.strip()
+    clipped = text[:500]
+    endings = list(re.finditer(r'[.!?](?:["\u201d\u2019]*)?(?=\s|$)', clipped))
+    if endings:
+        return clipped[:endings[-1].end()].strip()
+    # At the evidence cap we cannot know whether the last token is complete.
+    boundaries = list(re.finditer(r'\s+', clipped))
+    return clipped[:boundaries[-1].start()].strip() if boundaries else ""
+
+
+def rendered_evidence(rows: list[dict]) -> list[tuple[dict, str]]:
+    """Keep the longest contained quote per character, with stable tie ordering."""
+    candidates = [(index, row, display_excerpt(row["text"])) for index, row in enumerate(rows)]
+    kept = []
+    for index, row, text in sorted(candidates, key=lambda item: (
+            -len(" ".join(item[2].split()).casefold()), item[0])):
+        normalized = " ".join(text.split()).casefold()
+        if not normalized:
+            continue
+        if any(row["id"] == other["id"] and re.search(
+                r'(?<!\w)' + re.escape(normalized) + r'(?!\w)',
+                " ".join(quote.split()).casefold()) for _, other, quote in kept):
+            continue
+        kept.append((index, row, text))
+    return [(row, text) for _, row, text in sorted(kept, key=lambda item: item[0])]
+
+
 def evidence_reply(rows: list[dict], status: str) -> ChatResponse:
     sources: dict[int, ChatSource] = {}
     paragraphs = []
     for row in rows:
         source = sources.setdefault(row["id"], ChatSource(id=row["id"], label=row["label"]))
-        source.evidence_ids.append(row["evidence_id"])
-        paragraphs.append(f'{row["nama"]}: {row["text"]}')
+        if row["evidence_id"] not in source.evidence_ids:
+            source.evidence_ids.append(row["evidence_id"])
+    for row, text in rendered_evidence(rows):
+        paragraphs.append(f'{row["nama"]}: {text}')
     return ChatResponse(
         mode="answer", answer="Berdasarkan basis pengetahuan Wayang Sasak:\n\n" + "\n\n".join(paragraphs),
         sources=list(sources.values()), llm_used=status == "used", llm_status=status,
@@ -91,9 +124,7 @@ class ChatService:
     async def chat(self, message: str) -> ChatResponse:
         decision = classify_intent(message, self.retrieval.catalog)
         if decision.intent in {"unsupported", "malicious"}:
-            # Preserve legacy invalid_response diagnostic, without calling the LLM.
-            status = "invalid_response" if decision.intent == "malicious" else "not_needed"
-            return catalog_reply(self.retrieval.catalog.response(message, "", True), status)
+            return catalog_reply(self.retrieval.catalog.response(message, "", True))
         reply = await self._answer(decision.query, decision.comparison_ids)
         reply.scope_notice = decision.scope_notice
         return reply
@@ -113,11 +144,11 @@ class ChatService:
         if comparison_ids and not comparison_ids <= {row["id"] for row in context}:
             context = []
         if not context:
-            return catalog_reply(self.retrieval.catalog.response(message, result.normalized_query, True), "insufficient_evidence")
+            return catalog_reply(self.retrieval.catalog.response(message, result.normalized_query, True))
         status = "not_configured"
         selected = context[:3]
         if comparison_ids and not comparison_ids <= {row["id"] for row in selected}:
-            return catalog_reply(self.retrieval.catalog.response(message, result.normalized_query, True), "insufficient_evidence")
+            return catalog_reply(self.retrieval.catalog.response(message, result.normalized_query, True))
         if self.gemini is not None:
             started = time.perf_counter()
             try:
@@ -147,4 +178,7 @@ class ChatService:
                 status = "internal"
             finally:
                 LOGGER.info("Chat Gemini selesai: category=%s duration=%.3f", status, time.perf_counter() - started)
+        if not rendered_evidence(selected):
+            return catalog_reply(self.retrieval.catalog.response(message, result.normalized_query, True),
+                                 "not_needed" if self.gemini is None else "insufficient_evidence")
         return evidence_reply(selected, status)
