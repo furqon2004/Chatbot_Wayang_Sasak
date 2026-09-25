@@ -25,7 +25,7 @@ Tahap 1 sudah selesai dan telah diuji dengan artefak asli di Google Colab. Janga
 - [x] Rumus terverifikasi: `probabilities = softmax(logits_raw / temperature)`.
 - [x] `label_mapping.json` valid untuk ID `0–19`, termasuk format legacy dengan nama mapping terbalik.
 - [x] `wayang_db.json` berisi 20 tokoh.
-- [x] ChromaDB tersedia, collection `wayang_sasak`, berisi 47 chunk.
+- [x] ChromaDB tersedia, collection `wayang_sasak`, berisi 48 chunk.
 - [x] Dataset: training 480, validasi 60, uji 60; masing-masing 20 kelas.
 - [x] Unit test lokal terakhir: 25 test lulus.
 - [x] Smoke test model asli lulus untuk top-1, urutan/probabilitas top-3, confidence, dan margin.
@@ -227,7 +227,7 @@ tests/
 - [ ] Gunakan embedding model `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`.
 - [ ] Muat embedder satu kali saat lifespan startup.
 - [ ] Buka ChromaDB persistent client dari `/content/drive/MyDrive/skripsi_wayang/chroma_db_wayang` satu kali.
-- [ ] Ambil collection `wayang_sasak` dan validasi jumlah dokumennya tidak nol; kondisi saat ini adalah 47 chunk.
+- [ ] Ambil collection `wayang_sasak` dan validasi jumlah dokumennya tidak nol; kondisi saat ini adalah 48 chunk.
 - [ ] Jangan menambah, menghapus, atau mengubah isi collection pada startup maupun request.
 - [ ] Bila ChromaDB tidak tersedia, gagalkan kesiapan fitur search dengan error terkontrol; jangan diam-diam membangun database baru.
 - [ ] Perluas `/health` dengan status retrieval tanpa membocorkan path internal, misalnya `retrieval_loaded`, `collection_name`, dan `document_count`.

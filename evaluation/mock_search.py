@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 
 from app.catalog import Catalog
-from app.config import DEFAULT_SEARCH_THRESHOLD
+from app.config import DEFAULT_SEARCH_THRESHOLD, EXPECTED_CHROMA_DOCUMENT_COUNT
 from app.query_normalizer import normalize_query
 from app.resources import OFFICIAL_LABELS
 from app.retrieval import RetrievalService
@@ -23,7 +23,7 @@ def mock_service(threshold=DEFAULT_SEARCH_THRESHOLD):
     characters[19]["filosofi"] = "Filosofi Gunungan dalam fixture sintetis."
 
     class MockSemantic:
-        document_count = 47
+        document_count = EXPECTED_CHROMA_DOCUMENT_COUNT
         metric = "cosine"
 
         def scores(self, query, top_k):

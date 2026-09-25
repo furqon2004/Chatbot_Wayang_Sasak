@@ -7,12 +7,17 @@ validasi Google Colab yang dilaporkan pengguna; artefak tersebut tidak tersedia
 untuk dijalankan ulang di workspace Windows. Finalisasi lokal tidak melakukan
 commit/push.
 
+Baseline aktif kini **48 chunk**, setelah pembaruan Gunungan secara sengaja
+oleh proyek. Pengguna melaporkan smoke retrieval baru lulus dengan
+`--expected-count 48`; angka kalibrasi di bawah tetap catatan historis, bukan
+pengukuran ulang atas artefak baru. Lihat [baseline dan provenance](retrieval.md).
+
 ## Hasil artefak asli Google Colab
 
 | Parameter / pemeriksaan | Hasil |
 | --- | --- |
 | Chroma metric | `cosine` |
-| `document_count` | 47 |
+| `document_count` saat validasi historis Tahap 2 | 47 (baseline aktif kini 48) |
 | Threshold kalibrasi | `0.5590755322575569` |
 | `negative_max` | `0.49093165576457987` |
 | `positive_min` | `0.6272194087505341` |

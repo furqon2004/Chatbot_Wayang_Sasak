@@ -2,7 +2,10 @@
 
 **Status: perbaikan kompatibilitas berdasarkan validasi Colab pengguna.**
 Pengguna membuktikan akses Gemini 3.6 Flash dan structured output dengan
-`response_json_schema`; smoke aplikasi penuh perlu dijalankan ulang di Colab.
+`response_json_schema`. Pengguna kini melaporkan smoke Gemini asli **5/5 lulus**,
+termasuk filosofi Gunungan dengan `llm_used=true` dan `llm_status=used`.
+Baseline aktif 48 chunk mencakup `gunungan__filosofi`; pembaruan pengetahuan
+dan artefak Drive disengaja oleh proyek. Lihat [provenance dan baseline](retrieval.md#baseline-artefak-aktif--pembaruan-gunungan-25-september-2026).
 Test lokal memakai mock tanpa membaca key atau memanggil API asli.
 
 `POST /chat` menerima `{"message":"Jelaskan Jayangrana"}`. Message 1–1000

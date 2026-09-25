@@ -2,8 +2,8 @@
 
 Aplikasi default hanya mengaktifkan `/health`, `/predict-image`, dan `/search`.
 `/chat` tidak terdaftar dan `Settings.from_env()` tidak membaca GEMINI_API_KEY.
-Modul/test Tahap 3 yang telah ada dipertahankan; jalur dependency injection
-eksplisitnya hanya dipakai test lama. Tidak ada panggilan Gemini asli.
+Chat dapat diaktifkan melalui `WAYANG_ENABLE_CHAT=true`; lihat [chat](chat.md).
+Pengujian lokal menggunakan mock tanpa API/key asli.
 
 `POST /search` menerima `{"query":"Apa fungsi Gunungan?","top_k":3}`.
 Query 1–1000 karakter, minimal satu huruf/angka; top_k integer 1–5.
@@ -106,3 +106,39 @@ perlu perluasan query evaluasi sebelum deployment publik.
 Dasar API: [Chroma collection configuration](https://docs.trychroma.com/docs/collections/configure),
 [Chroma client](https://docs.trychroma.com/reference/python/client),
 [SentenceTransformer encode](https://www.sbert.net/docs/package_reference/sentence_transformer/model.html).
+
+## Baseline artefak aktif ? pembaruan Gunungan, 25 September 2026
+
+Berdasarkan laporan pengguna, `wayang_db.json` dan artefak Google Drive
+**diubah secara sengaja oleh proyek**, dengan pengetahuan dari data/narasumber
+proyek, bukan fakta yang dikarang Gemini atau ditambahkan backend.
+Deskripsi Gunungan mencakup pembukaan pertunjukan dan transisi/pergantian
+antaradegan; ciri-cirinya mencakup motif pohon dan ular. Filosofinya menjelaskan
+pohon sebagai pohon Khuldi, ular sebagai simbol Iblis, serta kaitannya dengan
+Jayangrana sebagai representasi Nabi Adam dan Munigarim sebagai representasi Hawa.
+Pernyataan ini mendokumentasikan sumber pengetahuan proyek, bukan verifikasi
+independen narasumber dalam sesi lokal.
+
+Collection `wayang_sasak` kini berisi **48 chunk**, termasuk chunk baru
+`gunungan__filosofi`. Baseline runtime terpusat di
+`app.config.EXPECTED_CHROMA_DOCUMENT_COUNT`; startup strict/production menerima
+tepat 48, menolak 47 dan 49, serta tetap mewajibkan metric `cosine`.
+Default smoke `--expected-count` mengikuti konstanta tersebut; override CLI
+hanya mengubah pemeriksaan smoke, tidak melonggarkan validasi startup strict.
+ID chunk Chroma berbeda dari ID evidence publik `profile:19:filosofi:0`;
+jawaban tetap dikutip dari profil JSON dan diverifikasi terhadap context.
+
+Pengguna melaporkan smoke retrieval asli lulus dengan `--expected-count 48`
+dan smoke Gemini asli lulus untuk seluruh 5 kasus, termasuk
+?Apa filosofi Gunungan?? dengan `llm_used=true`, `llm_status=used`.
+Hasil ini tidak diklaim sebagai eksekusi ulang lokal. Pembaruan baseline kode
+tidak menulis ulang JSON, ChromaDB, dataset, model, atau artefak Drive.
+
+Metric tetap `cosine`, embedding tetap
+`sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`, normalisasi
+embedding tetap `false`, threshold tetap `0.5590755322575569`, dan bobot
+semantic/lexical tetap 55/45. CLIP, temperature, dan kontrol keamanan tetap.
+Hash lama dan baru boleh berbeda akibat pembaruan yang disengaja ini;
+smoke tetap mewajibkan hash JSON/Chroma stabil selama setiap eksekusi.
+Jumlah chunk saja tidak membuktikan isi atau provenance artefak; evaluasi
+holdout independen dan kontrol provenance tetap diperlukan.

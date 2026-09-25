@@ -11,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from fastapi.testclient import TestClient
 
 from app.api import create_app
-from app.config import Settings
+from app.config import EXPECTED_CHROMA_DOCUMENT_COUNT, Settings
 from app.evaluation import calibrate_threshold, evaluate
 
 
@@ -84,13 +84,17 @@ def assert_search_payload(payload, case, catalog):
             assert row["evidence"], "Evidence kosong"
 
 
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--calibrate", action="store_true", help="Hitung threshold dengan artefak asli untuk sesi smoke ini")
+    parser.add_argument("--expected-count", type=int, default=EXPECTED_CHROMA_DOCUMENT_COUNT)
+    return parser.parse_args(argv)
+
+
 def main():
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--calibrate", action="store_true", help="Hitung threshold dengan artefak asli untuk sesi smoke ini")
-    parser.add_argument("--expected-count", type=int, default=47)
-    args = parser.parse_args()
+    args = parse_args()
     settings = Settings.from_env()
     before = fingerprints(settings)
     app = create_app(settings)

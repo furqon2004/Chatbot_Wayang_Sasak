@@ -78,3 +78,11 @@ def test_successful_report_printed_without_failure_summary(capsys):
     report = evaluate(mock_service(), cases)
     check_report(report, cases)
     assert json.loads(capsys.readouterr().out) == report
+
+
+def test_expected_count_default_and_cli_override():
+    from app.config import EXPECTED_CHROMA_DOCUMENT_COUNT
+    from scripts.colab_search_smoke_test import parse_args
+    assert EXPECTED_CHROMA_DOCUMENT_COUNT == 48
+    assert parse_args([]).expected_count == EXPECTED_CHROMA_DOCUMENT_COUNT
+    assert parse_args(["--expected-count", "49"]).expected_count == 49

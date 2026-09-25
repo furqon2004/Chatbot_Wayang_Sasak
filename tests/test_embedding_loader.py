@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from app.api import create_app
-from app.config import EMBEDDING_MODEL, SecuritySettings, Settings
+from app.config import EXPECTED_CHROMA_DOCUMENT_COUNT, EMBEDDING_MODEL, SecuritySettings, Settings
 from app.resources import ResourceValidationError
 from app.retrieval_resources import load_retrieval
 from app.schemas import SearchRequest
@@ -21,8 +21,8 @@ def embedding_runtime(settings, tmp_path, monkeypatch):
     source.mkdir()
     (source / 'chroma.sqlite3').write_bytes(b'fixture')
     calls, closed = [], []
-    collection = SimpleNamespace(count=lambda: 47, metadata={'hnsw:space': 'cosine'},
-        get=lambda **k: {'ids': [str(i) for i in range(47)], 'metadatas': [{'label': '0'}] * 47})
+    collection = SimpleNamespace(count=lambda: EXPECTED_CHROMA_DOCUMENT_COUNT, metadata={'hnsw:space': 'cosine'},
+        get=lambda **k: {'ids': [str(i) for i in range(EXPECTED_CHROMA_DOCUMENT_COUNT)], 'metadatas': [{'label': '0'}] * EXPECTED_CHROMA_DOCUMENT_COUNT})
     client = SimpleNamespace(get_collection=lambda *a, **k: collection,
                              close=lambda: closed.append(True))
     monkeypatch.setitem(sys.modules, 'chromadb', SimpleNamespace(PersistentClient=lambda **k: client))

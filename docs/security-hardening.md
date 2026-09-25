@@ -171,7 +171,7 @@ snapshot approach is preserved: original source is read, PersistentClient opens
 only a temporary copy, and smoke compares source hashes. This is **not** a native
 read-only Chroma client; the temporary copy can be migrated/written by the
 library. Runtime environment loading validates the `wayang_sasak` collection,
-47 documents and cosine metric. Small explicitly injected test resources retain
+48 documents and cosine metric. Small explicitly injected test resources retain
 their baseline contract. No mutation endpoint or embedding rebuild was added.
 
 ## Secrets, logs and incident response
@@ -380,7 +380,19 @@ and immutable action SHAs for a hardened release.
 
 Before deployment, run the existing 15-case retrieval smoke and hash checks on
 original Colab artifacts, rerun image reference/temperature regression, validate
-strict metadata/47/cosine startup, and test `/chat` first with fake Gemini and
+strict metadata/48/cosine startup, and test `/chat` first with fake Gemini and
 real retrieval. Real Gemini activation, keys, quota/cost and provider safety are
 not proven locally and require a separate controlled validation. Review the
 actual frontend, TLS proxy, distributed limits and dependency findings first.
+
+
+### Intentional artifact baseline update ? 25 September 2026
+
+The current strict/production count is 48, centrally defined by
+`app.config.EXPECTED_CHROMA_DOCUMENT_COUNT`. The project intentionally updated
+Drive JSON and Chroma with `gunungan__filosofi`, using project data/informants;
+see [provenance and reported Colab results](retrieval.md). This changes the
+expected count, not metadata, cosine, snapshot isolation, or security controls.
+Counts 47 and 49 remain rejected. Previous hashes describe previous artifacts;
+within-run source fingerprint checks remain mandatory. Count checks alone do
+not authenticate artifact contents. Local tests use synthetic fixtures only.

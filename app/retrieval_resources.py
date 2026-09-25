@@ -7,7 +7,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from .catalog import Catalog
-from .config import EMBEDDING_MODEL, Settings
+from .config import EMBEDDING_MODEL, EXPECTED_CHROMA_DOCUMENT_COUNT, Settings
 from .semantic import RetrievalUnavailable, SemanticSearch
 from .resources import ResourceValidationError
 
@@ -56,7 +56,7 @@ def load_retrieval(settings: Settings, catalog: Catalog) -> RetrievalResources:
         )
         # Sengaja get_collection, tidak get_or_create_collection.
         collection = client.get_collection(settings.collection_name, embedding_function=None)
-        if (settings.security.production or settings.security.strict_artifacts) and collection.count() != 47:
+        if (settings.security.production or settings.security.strict_artifacts) and collection.count() != EXPECTED_CHROMA_DOCUMENT_COUNT:
             raise RetrievalUnavailable("Jumlah dokumen tidak sesuai baseline")
         # Model source is application-owned, never supplied by a request.
         model_path = Path(EMBEDDING_MODEL)

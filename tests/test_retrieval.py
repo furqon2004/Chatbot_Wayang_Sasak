@@ -149,3 +149,24 @@ def test_query_failure_does_not_leak_vendor_exception():
     with pytest.raises(RetrievalUnavailable) as caught:
         semantic.scores("query", 3)
     assert "private-secret" not in str(caught.value)
+
+
+def test_gunungan_philosophy_chunk_maps_to_official_character():
+    class PhilosophyCollection:
+        metadata = {"hnsw:space": "cosine"}
+        def count(self):
+            return 1
+        def get(self, **kwargs):
+            return {"ids": ["gunungan__filosofi"], "metadatas": [{"slug": "gunungan"}]}
+        def query(self, **kwargs):
+            return {"ids": [["gunungan__filosofi"]], "distances": [[0.1]]}
+    def encode(*args, **kwargs):
+        assert kwargs["normalize_embeddings"] is False
+        return np.ones((1, 384))
+    service = mock_service()
+    service.semantic = SemanticSearch(PhilosophyCollection(), SimpleNamespace(encode=encode), service.catalog)
+    assert service.semantic.chunk_classes["gunungan__filosofi"] == 19
+    result = service.search("Apa filosofi Gunungan?")
+    assert result.results[0].id == 19
+    evidence = dict(zip(result.results[0].evidence_ids, result.results[0].evidence))
+    assert evidence["profile:19:filosofi:0"] == service.catalog.profiles[19]["filosofi"]

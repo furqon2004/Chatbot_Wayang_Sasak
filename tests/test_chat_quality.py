@@ -120,3 +120,31 @@ def test_chat_trims_actual_partial_word_and_smoke_accepts_safe_excerpt():
     invented["answer"] += " Fakta tambahan."
     with pytest.raises(AssertionError):
         _assert_sources(invented, evidence_context(result.results, retrieval.catalog))
+
+
+@pytest.mark.parametrize("has_philosophy", [True, False])
+def test_gunungan_philosophy_is_grounded_or_rejected_when_absent(has_philosophy):
+    import json
+    retrieval = mock_service()
+    evidence_id = "profile:19:filosofi:0"
+    # Synthetic fixture only: never substitute model knowledge for project data.
+    original = retrieval.catalog.profiles[19]["filosofi"]
+    if not has_philosophy:
+        del retrieval.catalog.profiles[19]["filosofi"]
+    sent = []
+    class Selector:
+        async def select(self, query, context):
+            sent.extend(context)
+            return json.dumps({"evidence_ids": [evidence_id]})
+    reply = asyncio.run(ChatService(retrieval, Selector()).chat("Apa filosofi Gunungan?"))
+    assert (evidence_id in {row["evidence_id"] for row in sent}) == has_philosophy
+    if has_philosophy:
+        assert reply.llm_used and reply.llm_status == "used"
+        assert reply.answer == "Berdasarkan basis pengetahuan Wayang Sasak:\n\nGunungan: " + original
+        assert reply.sources[0].evidence_ids == [evidence_id]
+    else:
+        assert not reply.llm_used and reply.llm_status == "invalid_response"
+        assert original not in reply.answer
+        assert all(evidence_id not in source.evidence_ids for source in reply.sources)
+    # These project concepts cannot appear unless supplied by fixture evidence.
+    assert all(word not in reply.answer for word in ("Khuldi", "Iblis", "Adam", "Hawa"))

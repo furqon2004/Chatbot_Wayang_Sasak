@@ -10,6 +10,8 @@ from urllib.parse import urlsplit
 
 DEFAULT_ROOT = Path("/content/drive/MyDrive/skripsi_wayang")
 EMBEDDING_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+# Baseline artefak proyek setelah penambahan chunk gunungan__filosofi.
+EXPECTED_CHROMA_DOCUMENT_COUNT = 48
 # Initial calibration artefak asli Colab; belum memakai holdout terpisah.
 DEFAULT_SEARCH_THRESHOLD = 0.5590755322575569
 
@@ -59,7 +61,7 @@ class SecuritySettings:
     max_pixels: int = 16_000_000
     body_timeout: float = 15
     public_docs: bool = False
-    strict_artifacts: bool = False  # DI mocks may contain fewer than 47 chunks.
+    strict_artifacts: bool = False  # DI mocks may contain fewer than the official chunk baseline.
 
     def __post_init__(self):
         if self.production and (len(self.service_token) < 32 or not self.allowed_hosts):

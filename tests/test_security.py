@@ -426,8 +426,9 @@ def test_security_chunked_body_limit_before_parser():
     asyncio.run(run())
 
 
-@pytest.mark.parametrize("metric,count", [("cosine", 46), ("l2", 47)])
-def test_security_strict_artifact_validation(settings, tmp_path, monkeypatch, metric, count):
+@pytest.mark.parametrize("production", [False, True])
+@pytest.mark.parametrize("metric,count", [("cosine", 47), ("cosine", 48), ("cosine", 49), ("l2", 48)])
+def test_security_strict_artifact_validation(settings, tmp_path, monkeypatch, metric, count, production):
     import sys
     source = tmp_path / "mock-chroma"
     source.mkdir()
@@ -441,9 +442,15 @@ def test_security_strict_artifact_validation(settings, tmp_path, monkeypatch, me
     monkeypatch.setitem(sys.modules, "chromadb", SimpleNamespace(PersistentClient=lambda **_: client))
     monkeypatch.setitem(sys.modules, "chromadb.config", SimpleNamespace(Settings=lambda **kw: kw))
     monkeypatch.setitem(sys.modules, "sentence_transformers", SimpleNamespace(SentenceTransformer=lambda *_, **kw: object()))
-    strict = replace(settings, chroma_dir=source, security=replace(settings.security, strict_artifacts=True))
-    with pytest.raises(RetrievalUnavailable):
-        load_retrieval(strict, mock_service().catalog)
+    strict = replace(settings, chroma_dir=source, security=replace(
+        settings.security, strict_artifacts=not production, production=production, service_token="fixture" * 8))
+    if metric == "cosine" and count == 48:
+        resources = load_retrieval(strict, mock_service().catalog)
+        assert resources.semantic.document_count == 48
+        resources.close()
+    else:
+        with pytest.raises(RetrievalUnavailable):
+            load_retrieval(strict, mock_service().catalog)
     assert original.read_bytes() == b"synthetic"
 
 

@@ -1,3 +1,4 @@
+from app.config import EXPECTED_CHROMA_DOCUMENT_COUNT
 from types import SimpleNamespace
 
 import pytest
@@ -105,5 +106,5 @@ def test_retrieval_loads_once_and_reports_count(settings, fake_resources):
         for _ in range(2):
             assert client.post("/search", json={"query": "Jayangrana"}).status_code == 200
         health = client.get("/health").json()
-        assert health["retrieval_loaded"] and health["document_count"] == 47
+        assert health["retrieval_loaded"] and health["document_count"] == EXPECTED_CHROMA_DOCUMENT_COUNT
     assert calls == ["load", "close"]

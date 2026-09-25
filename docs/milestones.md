@@ -1,5 +1,18 @@
 # Catatan validasi milestone
 
+**Pembaruan 25 September 2026:** pengguna melaporkan smoke retrieval asli
+lulus pada baseline **48 chunk** dan smoke Gemini asli **5/5 lulus**, termasuk
+filosofi Gunungan (`llm_used=true`, `llm_status=used`). JSON/Drive diperbarui
+secara sengaja berdasarkan data/narasumber proyek; chunk baru
+`gunungan__filosofi`. Lihat [baseline dan provenance](retrieval.md).
+Validasi lokal pembaruan baseline: **359 test lulus**, 3 warning baseline;
+compileall, pip check, secret scan (0 temuan), dan git diff --check lulus.
+Tes mencakup batas 47/48/49 untuk strict dan production, metric cosine,
+serta evidence filosofi Gunungan yang harus berasal dari context.
+
+Bagian A?C di bawah adalah riwayat tahap sebelumnya; status menunggu di sana
+tidak menggantikan laporan Colab terbaru. Tidak ada eksekusi API asli lokal.
+
 Baseline Git: `main`, `d23d70b`. `todolist.md` sudah berubah saat pekerjaan
 dimulai dan dipertahankan sebagai perubahan pengguna, tidak dimasukkan ke commit.
 Baseline yang benar-benar dijalankan lokal: **23 passed**, 3 warning.
