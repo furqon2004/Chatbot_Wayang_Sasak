@@ -106,7 +106,7 @@ class Settings:
     search_threshold: float = DEFAULT_SEARCH_THRESHOLD
     normalize_embeddings: bool = False
     gemini_api_key: str = field(default="", repr=False, compare=False)
-    gemini_model: str = "gemini-2.5-flash"
+    gemini_model: str = "gemini-3.6-flash"
     gemini_timeout_seconds: float = 15.0
     gemini_max_attempts: int = 2
     chat_enabled: bool = False
@@ -152,7 +152,7 @@ class Settings:
             gemini_api_key=os.getenv("GEMINI_API_KEY", "").strip() if chat_enabled else "",
             chat_enabled=chat_enabled,
             security=SecuritySettings.from_env(),
-            gemini_model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
+            gemini_model=os.getenv("GEMINI_MODEL", "gemini-3.6-flash"),
             gemini_timeout_seconds=_timeout_env(),
             gemini_max_attempts=_positive_int_env("GEMINI_MAX_ATTEMPTS", 2),
         )

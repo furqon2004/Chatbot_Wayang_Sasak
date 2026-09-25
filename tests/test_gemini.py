@@ -36,10 +36,16 @@ def test_transient_retry_is_bounded_with_backoff(settings):
     config = calls[0]["config"]
     assert "HANYA" in config.system_instruction
     assert config.response_mime_type == "application/json"
+    from app.chat_schemas import EvidenceSelection
+    assert config.response_json_schema == EvidenceSelection.model_json_schema()
+    assert config.response_schema is None
+    assert config.tools == []
+    assert config.automatic_function_calling.disable is True
+    assert calls[0]["model"] == settings.gemini_model
 
 
 @pytest.mark.parametrize("code,category", [(429, "rate_limit"), (401, "invalid_key"),
-    (403, "invalid_key"), (400, "model_unavailable"), (404, "model_unavailable"), (408, "timeout")])
+    (403, "invalid_key"), (400, "invalid_request"), (404, "model_unavailable"), (408, "timeout")])
 def test_nonretryable_errors_do_not_retry(settings, code, category):
     sdk, calls = fake_sdk([VendorError(code)])
     client = GeminiClient(settings, client=sdk)
@@ -102,6 +108,15 @@ def test_official_sdk_serializes_schema_over_mock_transport(settings):
     assert json.loads(asyncio.run(run()))["evidence_ids"] == ["profile:0:deskripsi:0"]
     assert len(requests) == 1
     assert requests[0]["generationConfig"]["responseMimeType"] == "application/json"
+    config = requests[0]["generationConfig"]
+    from app.chat_schemas import EvidenceSelection
+    assert config["responseJsonSchema"] == EvidenceSelection.model_json_schema()
+    assert config["responseJsonSchema"]["additionalProperties"] is False
+    assert "responseSchema" not in config
+    assert "thinkingConfig" not in config
+    assert config["maxOutputTokens"] == 1024
+    assert config["temperature"] == 0
+    assert not requests[0].get("tools")
     assert "systemInstruction" in requests[0]
 
 
@@ -110,3 +125,10 @@ def test_official_invalid_key_reason_is_sanitized():
     from app.gemini import error_category
     error = APIError(400, {"error": {"message": "private", "details": [{"reason": "API_KEY_INVALID"}]}})
     assert error_category(error) == "invalid_key"
+
+
+def test_adapter_uses_operator_model(settings):
+    sdk, calls = fake_sdk(['{"evidence_ids":[]}'])
+    client = GeminiClient(replace(settings, gemini_model="gemini-operator-model"), client=sdk)
+    asyncio.run(client.select("query", []))
+    assert calls[0]["model"] == "gemini-operator-model"

@@ -1,10 +1,9 @@
 # Tahap 3: chat dengan evidence tervalidasi
 
-**Status: PERSIAPAN — DITUNDA MENUNGGU API KEY atas permintaan pengguna.**
-Kode di bawah sudah tersedia dan diuji dengan mock sebelum permintaan penundaan.
-Belum ada request Gemini asli; Tahap 3 belum dinyatakan selesai. Biarkan key
-kosong untuk memakai fallback. Perintah smoke Colab di bawah disiapkan untuk
-dijalankan setelah pengguna siap mengaktifkan Gemini.
+**Status: perbaikan kompatibilitas berdasarkan validasi Colab pengguna.**
+Pengguna membuktikan akses Gemini 3.6 Flash dan structured output dengan
+`response_json_schema`; smoke aplikasi penuh perlu dijalankan ulang di Colab.
+Test lokal memakai mock tanpa membaca key atau memanggil API asli.
 
 `POST /chat` menerima `{"message":"Jelaskan Jayangrana"}`. Message 1–1000
 karakter dan harus mengandung huruf/angka. History belum didukung; field ekstra
@@ -52,11 +51,18 @@ retrieval sebagai fallback dan menandai llm_used=false.
 
 ## SDK, model, dan konfigurasi
 
-SDK resmi: `google-genai>=1.30,<2`. Default `GEMINI_MODEL=gemini-2.5-flash`
-diverifikasi terhadap halaman resmi pada 22 September 2026. Google masih
-menyediakan identifier tersebut, tetapi akses keluarga 2.5 dibatasi ke pengguna
-lama. Model bisa diubah dengan environment sesuai akses akun; backend tidak
-mengganti model otomatis dan startup tidak melakukan request berbayar.
+SDK resmi: `google-genai>=1.30,<2`. Default `GEMINI_MODEL=gemini-3.6-flash`.
+Operator tetap dapat override melalui `GEMINI_MODEL`; adapter memakai Settings.
+Tidak ada penggantian model otomatis atau request berbayar saat startup.
+Schema dikirim melalui `response_json_schema=EvidenceSelection.model_json_schema()`
+dengan `additionalProperties=false`; validasi Pydantic lokal dan allowlist ID
+wajib tetap berlaku. HTTP 400 umum menjadi `invalid_request`, HTTP 404 menjadi
+`model_unavailable`, dan reason `API_KEY_INVALID` tetap `invalid_key`.
+
+Thinking memakai default provider tanpa parameter khusus model. Batas output
+1024 token dipertahankan berdasarkan keberhasilan eksperimen Colab pengguna;
+output terpotong tetap ditolak dan memakai fallback aman. Lihat
+[dokumentasi thinking resmi](https://ai.google.dev/gemini-api/docs/generate-content/thinking).
 
 - `GEMINI_API_KEY`: hanya environment/Colab Secrets, tidak dicetak/disimpan repo.
 - `GEMINI_MODEL`: identifier model yang tersedia untuk akun.
@@ -75,7 +81,7 @@ di lifespan dan ditutup pada shutdown.
 422 untuk input invalid, 503 untuk retrieval unavailable (katalog tetap dapat
 berjalan dari JSON), 500 untuk internal error. Kegagalan Gemini menghasilkan
 HTTP 200 dengan fallback berguna; periksa llm_status: used, not_needed,
-not_configured, timeout, rate_limit, invalid_key, model_unavailable, unavailable,
+not_configured, timeout, rate_limit, invalid_key, invalid_request, model_unavailable, unavailable,
 invalid_response, insufficient_evidence, atau internal. Log hanya durasi dan
 kategori aman. Raw exception, prompt, context, dan key tidak dikirim kembali.
 
@@ -87,13 +93,13 @@ dengan nama GEMINI_API_KEY dan izinkan akses notebook, atau environment.
 Skrip memuat Secrets hanya bila environment belum tersedia.
 
 ```bash
-python scripts/colab_chat_smoke_test.py
+WAYANG_ENABLE_CHAT=true GEMINI_MODEL=gemini-3.6-flash python scripts/colab_chat_smoke_test.py
 ```
 
 Skrip ini opt-in dan dapat memakai quota/biaya API. Test default pytest tidak
 menggunakan key/API sungguhan. Smoke hanya mencetak mode/status/jumlah source,
-tidak menulis response atau key ke file. Kelulusan mengharuskan setidaknya satu
-request Gemini sungguhan memakai evidence valid; fallback saja bukan kelulusan
+tidak menulis response atau key ke file. Kelulusan mengharuskan kedua kasus in-scope
+memakai Gemini sungguhan dengan ID dari context yang benar-benar dikirim; fallback saja bukan kelulusan
 integrasi. JSON dan Chroma sumber di-hash sebelum/sesudah. Model klasifikasi
 hanya dibaca oleh loader Tahap 1.
 
@@ -102,5 +108,5 @@ deployment produksi. Batas message/context/timeout sudah diterapkan; sebelum
 membuka layanan publik, tambahkan pembatasan request/quota sesuai pengguna.
 
 Sumber resmi: [SDK yang didukung](https://ai.google.dev/gemini-api/docs/libraries),
-[Gemini 2.5 Flash dan akses](https://ai.google.dev/gemini-api/docs/models/gemini-2.5-flash),
+[Gemini 3.6 Flash](https://ai.google.dev/gemini-api/docs/models/gemini-3.6-flash),
 [Google GenAI SDK Python](https://googleapis.github.io/python-genai/).

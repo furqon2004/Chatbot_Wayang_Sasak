@@ -36,3 +36,13 @@ def test_gemini_invalid_settings_fail_without_echoing_value(monkeypatch, name, v
     monkeypatch.setenv(name, value)
     with pytest.raises(ValueError, match=name):
         Settings.from_env()
+
+
+def test_default_gemini_model(settings):
+    assert settings.gemini_model == "gemini-3.6-flash"
+    assert Settings.from_env().gemini_model == "gemini-3.6-flash"
+
+
+def test_gemini_model_environment_override(monkeypatch):
+    monkeypatch.setenv("GEMINI_MODEL", "gemini-operator-model")
+    assert Settings.from_env().gemini_model == "gemini-operator-model"

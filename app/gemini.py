@@ -47,7 +47,7 @@ def error_category(exc: Exception) -> str:
             rows = details.get("error", details).get("details", [])
             if any(isinstance(row, dict) and row.get("reason") == "API_KEY_INVALID" for row in rows):
                 return "invalid_key"
-        return "model_unavailable"
+        return "invalid_request"
     if code == 404:
         return "model_unavailable"
     if code in {500, 502, 503, 504} or isinstance(exc, httpx.ConnectError):
@@ -110,14 +110,12 @@ class GeminiClient:
                     config=types.GenerateContentConfig(
                         system_instruction=SYSTEM_INSTRUCTION,
                         response_mime_type="application/json",
-                        response_schema=EvidenceSelection,
+                        response_json_schema=EvidenceSelection.model_json_schema(),
                         temperature=0,
                         max_output_tokens=1024,
                         tools=[],
                         automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
-                        # Nonaktifkan thinking pada keluarga target agar output ID tidak terpotong.
-                        thinking_config=types.ThinkingConfig(thinking_budget=0)
-                        if self.settings.gemini_model.startswith("gemini-2.5-flash") else None,
+                        # Gunakan default thinking provider; jangan menebak parameter model.
                     ),
                 )
                 feedback = getattr(response, "prompt_feedback", None)

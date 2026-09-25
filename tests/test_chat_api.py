@@ -100,7 +100,7 @@ def test_empty_evidence_selection_offers_catalog(chat_factory):
     assert payload["llm_status"] == "insufficient_evidence"
 
 
-@pytest.mark.parametrize("category", ["timeout", "rate_limit", "invalid_key", "model_unavailable", "unavailable"])
+@pytest.mark.parametrize("category", ["timeout", "rate_limit", "invalid_key", "invalid_request", "model_unavailable", "unavailable"])
 def test_gemini_errors_preserve_grounded_reply(chat_factory, category):
     payload = chat_factory(FakeGemini(error=GeminiFailure(category))).post("/chat", json={"message": "Jelaskan Jayagrana"}).json()
     assert payload["mode"] == "answer" and not payload["llm_used"]
@@ -187,3 +187,31 @@ def test_api_key_not_in_settings_health_or_logs(settings, fake_resources, caplog
         health = client.get("/health")
     assert secret not in health.text and secret not in caplog.text
     assert health.json()["gemini_configured"] and not health.json()["gemini_client_ready"]
+
+
+def test_structured_output_is_revalidated_locally(chat_factory, monkeypatch):
+    from app.chat_schemas import EvidenceSelection
+    original = EvidenceSelection.model_validate_json
+    seen = []
+    def validate(raw):
+        seen.append(raw)
+        return original(raw)
+    monkeypatch.setattr(EvidenceSelection, "model_validate_json", validate)
+    payload = chat_factory(FakeGemini()).post("/chat", json={"message": "Jelaskan Jayagrana"}).json()
+    assert payload["llm_used"] and len(seen) == 1
+
+
+def test_provider_bad_request_is_safe_in_public_response_and_logs(chat_factory, settings, caplog):
+    from app.gemini import GeminiClient
+    from test_gemini import fake_sdk, VendorError
+    sdk, _ = fake_sdk([VendorError(400)])
+    async def aclose():
+        pass
+    sdk.aio.aclose = aclose
+    sdk.close = lambda: None
+    caplog.set_level("INFO")
+    response = chat_factory(GeminiClient(settings, client=sdk)).post(
+        "/chat", json={"message": "Jelaskan Jayagrana"})
+    assert response.json()["llm_status"] == "invalid_request"
+    assert response.json()["llm_used"] is False
+    assert "private vendor detail" not in response.text + caplog.text

@@ -40,7 +40,7 @@ class ChatSource(BaseModel):
 
 LLMStatus = Literal[
     "used", "not_needed", "not_configured", "timeout", "rate_limit",
-    "invalid_key", "model_unavailable", "unavailable", "invalid_response",
+    "invalid_key", "invalid_request", "model_unavailable", "unavailable", "invalid_response",
     "insufficient_evidence", "internal",
 ]
 

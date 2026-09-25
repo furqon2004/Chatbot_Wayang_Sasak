@@ -69,8 +69,8 @@ mengaktifkan atau memvalidasi API Gemini asli.
 
 - Modul yang disiapkan: `app/chat.py`, `chat_routes.py`, `chat_schemas.py`,
   `gemini.py`; config/lifespan/environment/dependency diperluas. SDK lokal
-  google-genai **1.75.0**, default model gemini-2.5-flash terverifikasi pada
-  dokumentasi resmi (akses akun tetap perlu diperiksa nanti).
+  google-genai **1.75.0**, default model saat ini gemini-3.6-flash setelah perbaikan kompatibilitas
+  berdasarkan bukti Colab pengguna; smoke aplikasi penuh perlu dijalankan ulang.
 - `/chat` menggunakan retrieval yang sama. Katalog dirender langsung dari
   JSON. Pada jalur LLM, hanya pemilihan ID evidence yang diterima; fakta/nama
   output dirender dari kutipan asli. Tanpa key, fallback tetap bekerja.

@@ -1,3 +1,4 @@
+from app.chat import evidence_context
 """Presentation regressions with synthetic profiles; no external artifacts."""
 import asyncio
 
@@ -97,7 +98,7 @@ def test_chat_fallback_deduplicates_real_shape_and_preserves_provenance():
     assert reply.sources[0].id == hit.id and reply.sources[0].label == hit.label
     assert reply.sources[0].evidence_ids == hit.evidence_ids
     from scripts.colab_chat_smoke_test import _assert_sources
-    _assert_sources(reply.model_dump(), result)
+    _assert_sources(reply.model_dump(), evidence_context(result.results, retrieval.catalog))
 
 
 def test_chat_trims_actual_partial_word_and_smoke_accepts_safe_excerpt():
@@ -114,8 +115,8 @@ def test_chat_trims_actual_partial_word_and_smoke_accepts_safe_excerpt():
     reply = asyncio.run(ChatService(retrieval).chat("Jelaskan Jayangrana"))
     assert reply.answer.endswith("Kalimat lengkap.")
     assert reply.sources[0].evidence_ids == hit.evidence_ids
-    _assert_sources(reply.model_dump(), result)
+    _assert_sources(reply.model_dump(), evidence_context(result.results, retrieval.catalog))
     invented = reply.model_dump()
     invented["answer"] += " Fakta tambahan."
     with pytest.raises(AssertionError):
-        _assert_sources(invented, result)
+        _assert_sources(invented, evidence_context(result.results, retrieval.catalog))
