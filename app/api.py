@@ -22,6 +22,8 @@ from .retrieval import RetrievalService
 from .retrieval_resources import load_retrieval
 from .search_routes import router as search_router
 from .security_middleware import SecurityMiddleware
+from .security import event
+from .schemas import PredictionResponse
 
 LOGGER = logging.getLogger(__name__)
 ALLOWED_CONTENT_TYPES = {"image/jpeg", "image/png", "image/webp"}
@@ -174,7 +176,7 @@ def create_app(
             "gemini_client_ready": request.app.state.chat.gemini is not None if request.app.state.chat else False,
         }
 
-    @app.post("/predict-image")
+    @app.post("/predict-image", response_model=PredictionResponse, response_model_exclude_unset=True)
     async def prediction(request: Request, file: UploadFile = File(...)):
         resources = request.app.state.resources
         if not request.app.state.ready or resources is None:
@@ -186,7 +188,11 @@ def create_app(
             data = await _read_limited(file, active_settings.max_upload_bytes)
             image = await run_in_threadpool(_decode_image, data, active_settings.security.max_pixels)
             try:
-                result = await run_in_threadpool(predict_image, image, resources)
+                result = await run_in_threadpool(
+                    predict_image, image, resources,
+                    min_confidence=active_settings.min_confidence,
+                    min_margin=active_settings.min_margin,
+                )
             finally:
                 image.close()
         except HTTPException:
@@ -196,7 +202,8 @@ def create_app(
             raise HTTPException(status_code=500, detail="Inferensi gambar gagal") from None
         finally:
             await file.close()
-        LOGGER.info("Inferensi selesai dalam %.3f detik", time.perf_counter() - started)
+        event(mode=result["status"], category="_and_".join(result["decision"]["reasons"]) or "thresholds_met",
+              latency_ms=round((time.perf_counter() - started) * 1000, 2))
         return result
 
     return app

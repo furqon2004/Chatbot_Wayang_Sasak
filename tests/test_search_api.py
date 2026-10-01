@@ -20,6 +20,9 @@ from conftest import image_bytes
     ({"ciri_ciri": []}, ""),
 ])
 def test_profile_compatibility_search_and_prediction(settings, fake_resources, traits, expected):
+    import torch
+    with torch.no_grad():
+        fake_resources.classifier.bias[19] = 5.0
     character = fake_resources.characters[19]
     character.pop("ciri_ciri")
     character.update(traits, gambar_utama="dataset_asli/gunungan/1.PNG")

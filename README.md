@@ -2,7 +2,9 @@
 
 Backend FastAPI ini memuat `CLIPVisionModelWithProjection`, image processor,
 linear classifier, label mapping, dan basis pengetahuan tepat satu kali saat
-startup. Kontrak Tahap 1 (`GET /health`, `POST /predict-image`) dipertahankan;
+startup. Prediksi gambar memiliki [decision guard dan kontrak uncertain](docs/vision-confidence-guard.md)
+dengan threshold confidence 0.85 dan margin 0.20; profil hanya diberikan saat accepted.
+Kontrak `GET /health` dipertahankan;
 Tahap 2 menambahkan `POST /search`. Persiapan Tahap 3 (`POST /chat`) sudah
 tersedia dengan fallback deterministik; aktivasi/validasi Gemini ditunda atas
 permintaan pengguna sampai API key siap. Tahap 3 belum dinyatakan selesai.

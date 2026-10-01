@@ -60,3 +60,54 @@ class CatalogSearch(BaseModel):
 
 
 SearchResponse = Annotated[AnswerSearch | CatalogSearch, Field(discriminator="mode")]
+
+
+class PredictionCandidate(BaseModel):
+    id: int
+    label: str
+    nama: str
+    probability: float = Field(ge=0, le=1)
+
+
+class PredictionIdentity(BaseModel):
+    id: int
+    label: str
+    nama: str
+    confidence: float = Field(ge=0, le=1)
+    margin: float = Field(ge=0, le=1)
+
+
+class AcceptedDecision(BaseModel):
+    accepted: Literal[True]
+    reasons: list[Literal["low_confidence", "low_margin"]] = Field(max_length=0)
+
+
+class UncertainDecision(BaseModel):
+    accepted: Literal[False]
+    reasons: list[Literal["low_confidence", "low_margin"]] = Field(min_length=1, max_length=2)
+
+
+class PredictionBase(BaseModel):
+    confidence: float = Field(ge=0, le=1)
+    margin: float = Field(ge=0, le=1)
+    top_3: list[PredictionCandidate] = Field(min_length=3, max_length=3)
+    top_3_status: Literal["candidates"]
+
+
+class AcceptedPrediction(PredictionBase):
+    status: Literal["accepted"]
+    decision: AcceptedDecision
+    prediksi: PredictionIdentity
+    profil: PublicProfile
+    message: None
+
+
+class UncertainPrediction(PredictionBase):
+    status: Literal["uncertain"]
+    decision: UncertainDecision
+    prediksi: None
+    profil: None
+    message: str
+
+
+PredictionResponse = Annotated[AcceptedPrediction | UncertainPrediction, Field(discriminator="status")]

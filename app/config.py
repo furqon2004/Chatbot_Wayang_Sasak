@@ -115,8 +115,14 @@ class Settings:
     security: SecuritySettings = field(default_factory=SecuritySettings)
     embedding_local_only: bool = False
     embedding_revision: str | None = None
+    min_confidence: float = 0.85
+    min_margin: float = 0.20
 
     def __post_init__(self):
+        for name, value in (("WAYANG_MIN_CONFIDENCE", self.min_confidence),
+                            ("WAYANG_MIN_MARGIN", self.min_margin)):
+            if not math.isfinite(value) or not 0 <= value <= 1:
+                raise ValueError(f"{name} harus finite dalam rentang 0-1")
         if not re.fullmatch(r"[A-Za-z0-9_-]{3,63}", self.collection_name):
             raise ValueError("Nama collection tidak valid")
         if not math.isfinite(self.search_threshold) or not 0 <= self.search_threshold <= 1:
@@ -147,6 +153,8 @@ class Settings:
             chroma_dir=Path(os.getenv("WAYANG_CHROMA_DIR", str(DEFAULT_ROOT / "chroma_db_wayang"))),
             collection_name=os.getenv("WAYANG_COLLECTION", "wayang_sasak"),
             search_threshold=_unit_float_env("WAYANG_SEARCH_THRESHOLD", DEFAULT_SEARCH_THRESHOLD),
+            min_confidence=_unit_float_env("WAYANG_MIN_CONFIDENCE", 0.85),
+            min_margin=_unit_float_env("WAYANG_MIN_MARGIN", 0.20),
             normalize_embeddings=_bool_env("WAYANG_NORMALIZE_EMBEDDINGS", False),
             embedding_local_only=_bool_env("WAYANG_EMBEDDING_LOCAL_ONLY", False),
             embedding_revision=os.getenv("WAYANG_EMBEDDING_REVISION", "").strip() or None,

@@ -32,6 +32,9 @@ def test_internal_image_not_public(image):
 
 
 def test_prediction_uses_public_serializer(settings, fake_resources):
+    import torch
+    with torch.no_grad():
+        fake_resources.classifier.bias[19] = 5.0
     fake_resources.characters[19]["embedding"] = [99]
     with TestClient(create_app(settings, lambda _: fake_resources)) as client:
         payload = client.post("/predict-image", files={

@@ -48,6 +48,9 @@ def test_health_and_resources_are_loaded_only_once(settings, fake_resources):
 def test_predict_valid_images_matches_explicit_mock_reference(
     settings, fake_resources, image_format, mime_type
 ):
+    # Confident synthetic winner exercises the accepted legacy contract.
+    with torch.no_grad():
+        fake_resources.classifier.bias[19] = 5.0
     app = create_app(settings, lambda _: fake_resources)
     with TestClient(app) as client:
         response = client.post(
@@ -57,6 +60,7 @@ def test_predict_valid_images_matches_explicit_mock_reference(
 
     assert response.status_code == 200
     payload = response.json()
+    assert payload["status"] == "accepted"
     assert len(payload["top_3"]) == 3
     assert payload["prediksi"]["id"] == 19
     assert payload["prediksi"]["label"] == "gunungan"
