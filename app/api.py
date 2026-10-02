@@ -6,7 +6,7 @@ import time
 from contextlib import asynccontextmanager
 from typing import Callable
 
-from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from PIL import Image, UnidentifiedImageError
@@ -24,6 +24,7 @@ from .search_routes import router as search_router
 from .security_middleware import SecurityMiddleware
 from .security import event
 from .schemas import PredictionResponse
+from .memory_upload import MemoryUploadRoute
 
 LOGGER = logging.getLogger(__name__)
 ALLOWED_CONTENT_TYPES = {"image/jpeg", "image/png", "image/webp"}
@@ -176,7 +177,9 @@ def create_app(
             "gemini_client_ready": request.app.state.chat.gemini is not None if request.app.state.chat else False,
         }
 
-    @app.post("/predict-image", response_model=PredictionResponse, response_model_exclude_unset=True)
+    prediction_router = APIRouter(route_class=MemoryUploadRoute)
+
+    @prediction_router.post("/predict-image", response_model=PredictionResponse, response_model_exclude_unset=True)
     async def prediction(request: Request, file: UploadFile = File(...)):
         resources = request.app.state.resources
         if not request.app.state.ready or resources is None:
@@ -206,4 +209,5 @@ def create_app(
               latency_ms=round((time.perf_counter() - started) * 1000, 2))
         return result
 
+    app.include_router(prediction_router)
     return app

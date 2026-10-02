@@ -1,0 +1,18 @@
+[theme]
+base = "dark"
+primaryColor = "#87651F"
+backgroundColor = "#0B0718"
+secondaryBackgroundColor = "#17102B"
+textColor = "#F5F1E8"
+yellowColor = "#D5A437"
+greenColor = "#66D9A0"
+borderColor = "#453857"
+baseRadius = "large"
+
+[server]
+maxUploadSize = 10
+enableXsrfProtection = true
+enableCORS = true
+
+[browser]
+gatherUsageStats = false

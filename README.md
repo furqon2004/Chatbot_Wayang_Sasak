@@ -194,5 +194,49 @@ python scripts/colab_chat_smoke_test.py
 
 ## Di luar lingkup
 
-Frontend/Streamlit, training, rebuild embedding, dan deployment produksi tidak
-termasuk. Dataset, model, JSON, dan ChromaDB sumber tidak ditulis atau diubah.
+Training, rebuild embedding, dan deployment produksi tidak termasuk.
+Dataset, model, JSON, dan ChromaDB sumber tidak ditulis atau diubah.
+
+## Antarmuka Wayang AI
+
+Instal dependensi UI dan jalankan dari root repository:
+
+```powershell
+.venv\Scripts\python.exe -m pip install -r requirements-ui.txt
+.venv\Scripts\python.exe -m streamlit run streamlit_app.py
+```
+
+Backend harus dijalankan pada terminal terpisah. Agar `/chat` tersedia:
+
+```powershell
+$env:WAYANG_ENABLE_CHAT = "true"
+.venv\Scripts\python.exe -m uvicorn main:app --env-file .env
+```
+
+UI membaca `.env` tanpa menimpa environment sistem. `WAYANG_API_URL` default
+`http://127.0.0.1:8000`; sesuaikan jika backend berada di host lain.
+`WAYANG_SERVICE_TOKEN` dikirim hanya dari server UI ke backend jika dikonfigurasi.
+UI tidak membutuhkan akses model atau kunci Gemini.
+
+Header memeriksa `/health` setiap 30 detik. Lampiran mendapat prioritas dan
+dikirim sebagai multipart ke `/predict-image`; teks tanpa gambar ke `/chat`.
+Sidebar menyediakan katalog dan pencarian melalui `/search`.
+Riwayat dan hasil pencarian hanya disimpan di session state, tanpa cache global
+atau penulisan ke disk. Byte gambar hanya dipakai selama upload/pengiriman,
+tidak disalin ke riwayat. Percakapan Baru menghapus state dan lampiran.
+Client tidak mencatat token, pertanyaan, gambar, atau isi respons ke log.
+Parser multipart `/predict-image` juga memakai memori tanpa rollover ke file
+sementara; batas ukuran request dari middleware tetap berlaku.
+
+Layout memakai komponen native Streamlit dengan pembungkusan baris pada layar
+kecil, label kontrol, dan fokus keyboard bawaan. Tidak ada HTML/CSS injection.
+Tema mengikuti [konfigurasi native Streamlit](https://docs.streamlit.io/develop/api-reference/configuration/config.toml).
+Emas ornamen `#D5A437`; tombol memakai emas gelap `#87651F` untuk menjaga
+kontras teks putih. Penempatan, transisi, dan surface mengikuti batas komponen
+native; tidak meniru merek atau aset pihak lain.
+
+Pengujian UI (HTTP dimock, tanpa model):
+
+```powershell
+.venv\Scripts\python.exe -m pytest tests/test_ui.py -q
+```
