@@ -218,12 +218,16 @@ UI membaca `.env` tanpa menimpa environment sistem. `WAYANG_API_URL` default
 `WAYANG_SERVICE_TOKEN` dikirim hanya dari server UI ke backend jika dikonfigurasi.
 UI tidak membutuhkan akses model atau kunci Gemini.
 
-Header memeriksa `/health` setiap 30 detik. Lampiran mendapat prioritas dan
-dikirim sebagai multipart ke `/predict-image`; teks tanpa gambar ke `/chat`.
-Sidebar menyediakan katalog dan pencarian melalui `/search`.
+Header memeriksa `/health` setiap 30 detik. Input teks dan lampiran berada dalam
+satu area dengan tombol Kirim. Teks yang terisi mengunci unggahan; gambar yang
+dipilih mengunci teks. Hapus input untuk berganti jenis pesan. Gambar dikirim
+sebagai multipart ke `/predict-image`, sedangkan teks dikirim ke `/chat`.
+Setelah dikirim, kedua input dikosongkan; kiriman yang berisi keduanya ditolak.
+Tombol katalog di sidebar membuka pilihan tokoh di percakapan utama melalui `/search`.
+Klik nama tokoh untuk meminta penjelasan melalui `/chat`; pencarian dilakukan melalui input chat.
 Riwayat dan hasil pencarian hanya disimpan di session state, tanpa cache global
-atau penulisan ke disk. Byte gambar hanya dipakai selama upload/pengiriman,
-tidak disalin ke riwayat. Percakapan Baru menghapus state dan lampiran.
+atau penulisan ke disk. Byte gambar disimpan dalam memori sesi agar unggahan
+tetap tampil di riwayat. Percakapan Baru menghapus riwayat, konteks, dan lampiran.
 Client tidak mencatat token, pertanyaan, gambar, atau isi respons ke log.
 Parser multipart `/predict-image` juga memakai memori tanpa rollover ke file
 sementara; batas ukuran request dari middleware tetap berlaku.
@@ -240,3 +244,54 @@ Pengujian UI (HTTP dimock, tanpa model):
 ```powershell
 .venv\Scripts\python.exe -m pytest tests/test_ui.py -q
 ```
+
+
+### Gambar tokoh dan percakapan lanjutan
+
+Jawaban teks menampilkan satu `gambar_utama` dari tokoh yang dijelaskan.
+Sediakan folder `dataset_asli` di sebelah `wayang_db.json`, di root proyek,
+atau atur `WAYANG_IMAGE_ROOT` ke folder `dataset_asli` yang sebenarnya.
+JSON hanya menyimpan referensi; tautan folder Google Drive bukan URL gambar langsung.
+Jika file belum tersedia, UI menampilkan keterangan tanpa mengganti gambar tokoh.
+
+Unggahan gambar tetap ditampilkan sekali dalam pesan pengguna. Setelah prediksi
+accepted, UI meminta penjelasan `/chat` untuk tokoh yang dikenali; saat layanan
+chat gagal, profil dari hasil prediksi tetap ditampilkan. Hasil uncertain tetap
+meminta gambar yang lebih jelas dan tidak diklaim sebagai identifikasi final.
+
+LLM memilih evidence penjelasan dan pertanyaan lanjutan yang tervalidasi.
+Jawaban `ya` saat ada tawaran lanjutan mengirim `awaiting_more` dan `seen_ids`;
+backend memilih tiga tokoh acak berbeda dari katalog resmi, menghindari tokoh
+yang telah dibahas selama masih tersedia setidaknya tiga tokoh baru. Tombol pilihan
+membuka penjelasan di chat. Pengacakan dilakukan aplikasi, tanpa memerlukan LLM.
+Konteks ini hanya berlaku dalam sesi UI dan dihapus oleh Percakapan Baru.
+
+
+### Sejarah, cerita, dan jumlah tokoh dari internet
+
+Pertanyaan umum seperti sejarah, asal-usul, lakon, jalan cerita, dan jumlah tokoh
+menggunakan Gemini dengan Google Search. Respons hanya diterima jika provider
+mengembalikan hasil pencarian dan metadata kutipan yang dapat dipetakan ke teks.
+UI menampilkan penanda sumber, tombol tautan, dan Search Suggestions dari provider.
+Dokumentasi integrasi: https://ai.google.dev/gemini-api/docs/generate-content/google-search
+
+Jika Google Search terkena kuota atau gangguan, aplikasi membaca daftar sumber
+budaya publik yang ditentukan di `app/web_sources.py`, kemudian meminta Gemini
+merangkumnya dengan ID sumber tervalidasi. Jalur ini membaca halaman daring saat
+permintaan berlangsung; cakupannya terbatas pada sumber tersebut, bukan pencarian
+web bebas. URL dari pengguna atau dari teks model tidak diunduh. Batas unduhan,
+waktu tunggu, dan pengalihan URL dikendalikan aplikasi. Sumber yang tidak tersedia
+dilewati; bila bukti atau Gemini tidak tersedia, aplikasi menyampaikan keterbatasan.
+Kutipan menunjukkan asal informasi, bukan jaminan kebenaran independen; versi dan
+ketidakpastian budaya harus tetap dijelaskan.
+
+`GEMINI_SEARCH_TIMEOUT_SECONDS` (default 45, maksimum 60) mengatur timeout panggilan
+model untuk jawaban internet; total permintaan web dibatasi 60 detik. Circuit breaker
+Google Search dipisahkan dari chat biasa agar kuota pencarian tidak menonaktifkan
+penjelasan tokoh. Batas kuota API key tetap berlaku; aplikasi tidak dapat menambahnya.
+
+Angka 20 selalu dijelaskan sebagai cakupan profil dan pengenalan gambar aplikasi.
+Jumlah tokoh tradisional, jumlah boneka dalam perangkat, dan jumlah tokoh dalam
+lakon tidak disamakan. Jika sumber tidak mendukung angka universal, jawaban harus
+mengatakan bahwa jumlah pastinya belum terverifikasi. Profil 20 tokoh dan gambar
+utamanya tetap berasal dari JSON lokal, tanpa ditimpa hasil web.

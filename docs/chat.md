@@ -9,8 +9,9 @@ dan artefak Drive disengaja oleh proyek. Lihat [provenance dan baseline](retriev
 Test lokal memakai mock tanpa membaca key atau memanggil API asli.
 
 `POST /chat` menerima `{"message":"Jelaskan Jayangrana"}`. Message 1–1000
-karakter dan harus mengandung huruf/angka. History belum didukung; field ekstra
-ditolak agar kontrak jelas. Service menggunakan instance retrieval yang sama
+karakter dan harus mengandung huruf/angka. Konteks lanjutan menerima `awaiting_more`
+dan `seen_ids` (maksimal 20 ID resmi); riwayat percakapan bebas tidak dikirim.
+Field lain ditolak agar kontrak jelas. Service menggunakan instance retrieval yang sama
 dengan `/search`.
 
 ```bash
@@ -24,7 +25,7 @@ catalog (20 ID/nama JSON) untuk mode catalog/fallback_catalog. Source answer
 berisi document `wayang_db.json`, id, label, dan evidence_ids yang benar-benar
 dirender. Mode katalog memiliki source document katalog, tanpa source palsu.
 
-## Grounding yang dapat diperiksa
+## Profil tokoh lokal: grounding yang dapat diperiksa
 
 Gemini memilih dan mengurutkan ID evidence, **bukan menulis fakta bebas**.
 Respons terstruktur divalidasi dengan Pydantic: field ekstra, ID tak dikenal,
@@ -37,7 +38,7 @@ saja tidak dijadikan jaminan kebenaran fakta.
 Context berisi maksimal 6000 karakter JSON evidence dari 3 hasil retrieval,
 termasuk ID/label/nama dan kutipan publik. Tidak ada embedding, daftar gambar,
 path internal, atau profil training dikirim. Query dikirim sebagai data di
-pesan pengguna; aturan tetap berada di system instruction. Tidak ada tools,
+pesan pengguna; aturan tetap berada di system instruction. Pada jalur profil tokoh ini, tidak ada tools,
 web search, atau pengetahuan luar dipakai untuk jawaban.
 
 Mode catalog/fallback_catalog tidak memanggil Gemini. Nama di teks dan field
@@ -113,3 +114,29 @@ membuka layanan publik, tambahkan pembatasan request/quota sesuai pengguna.
 Sumber resmi: [SDK yang didukung](https://ai.google.dev/gemini-api/docs/libraries),
 [Gemini 3.6 Flash](https://ai.google.dev/gemini-api/docs/models/gemini-3.6-flash),
 [Google GenAI SDK Python](https://googleapis.github.io/python-genai/).
+
+
+## Pertanyaan budaya umum dan sumber internet
+
+Sejarah, asal-usul, jalan cerita, lakon, dan jumlah tokoh diarahkan ke jalur
+`web_answer`. Gemini memakai Google Search dan backend memeriksa metadata sumber
+serta dukungan kutipan. UI menampilkan nomor referensi, tautan sumber, dan widget
+Search Suggestions dari provider. Instruksi di luar domain tetap disaring sebelum
+panggilan web. Jawaban web tidak menambahkan tokoh ke katalog atau mengubah JSON.
+
+Saat kuota Google Search atau layanannya bermasalah, aplikasi mencoba membaca
+sumber budaya publik dari daftar tetap di `app/web_sources.py`; Gemini merangkum
+teks yang berhasil diambil dengan ID sumber tervalidasi. Ini pembacaan sumber web
+terpilih, bukan mesin pencarian umum. Keterkaitan ID dan URL dapat diperiksa,
+sedangkan kesesuaian setiap parafrase tetap memiliki keterbatasan model generatif.
+Jika sumber tidak mendukung angka total atau cerita tertentu, jawaban menyatakan
+keterbatasannya. Batas 20 tokoh adalah cakupan profil/pengenalan aplikasi, bukan
+jumlah seluruh tokoh tradisional. Pertanyaan jumlah di aplikasi dijawab langsung
+berdasarkan katalog tanpa panggilan Gemini.
+
+`web_sources` membawa judul dan URL HTTPS; `sources` tetap dikhususkan untuk JSON
+lokal. HTML hanya berasal dari metadata `search_entry_point` Google dan dirender
+melalui sanitasi `st.html`, bukan HTML jawaban model. Kuota/error internet tidak
+ditampilkan sebagai jawaban terverifikasi; `llm_status` menyatakan kegagalannya.
+Circuit breaker pencarian dipisahkan dari chat biasa. Timeout web total 60 detik;
+`GEMINI_SEARCH_TIMEOUT_SECONDS` mengatur timeout model di jalur tersebut.

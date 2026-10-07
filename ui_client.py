@@ -36,14 +36,22 @@ def request_api(path, *, payload=None, image=None):
             415: "Gunakan gambar JPEG, PNG, atau WebP yang valid.",
             422: "Input belum valid. Periksa pertanyaan atau gambar Anda.",
             429: "Layanan sedang sibuk. Tunggu sebentar lalu coba lagi.",
+            500: "Gangguan internal backend (HTTP 500). Silakan coba lagi.",
+            502: "Gateway backend bermasalah (HTTP 502). Silakan coba lagi.",
+            503: "Layanan backend belum siap (HTTP 503). Silakan coba lagi.",
+            504: "Gateway backend kehabisan waktu (HTTP 504). Silakan coba lagi.",
         }
         raise BackendError(messages.get(exc.response.status_code,
-                           "Layanan belum dapat memproses permintaan. Silakan coba lagi.")) from None
-    except (httpx.HTTPError, ValueError):
-        raise BackendError("Backend tidak tersedia atau respons tidak valid. Silakan coba lagi.") from None
+                           f"Permintaan ditolak backend (HTTP {exc.response.status_code}). Silakan coba lagi.")) from None
+    except httpx.TimeoutException:
+        raise BackendError("Waktu tunggu backend habis. Silakan coba lagi.") from None
+    except httpx.HTTPError:
+        raise BackendError("Koneksi ke backend gagal. Silakan coba lagi.") from None
+    except ValueError:
+        raise BackendError("Format respons backend tidak valid. Silakan coba lagi.") from None
 
 
-def send_message(text, uploaded=None):
+def send_message(text, uploaded=None, *, awaiting_more=False, seen_ids=(), character_id=None):
     if uploaded is not None:
         if not uploaded.size or uploaded.size > 10 * 1024 * 1024:
             raise BackendError("Gunakan gambar tidak kosong dengan ukuran maksimal 10 MB.")
@@ -54,4 +62,9 @@ def send_message(text, uploaded=None):
         return "image", request_api("/predict-image", image=(uploaded.getvalue(), mime))
     if not text.strip() or not any(c.isalnum() for c in text):
         raise BackendError("Tulis pertanyaan atau lampirkan gambar terlebih dahulu.")
-    return "chat", request_api("/chat", payload={"message": text.strip()})
+    payload = {"message": text.strip()}
+    if character_id is not None:
+        payload["character_id"] = character_id
+    if awaiting_more:
+        payload.update(awaiting_more=True, seen_ids=list(seen_ids))
+    return "chat", request_api("/chat", payload=payload)

@@ -1,6 +1,8 @@
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from urllib.parse import urlsplit
+import ipaddress
 
 from .schemas import CatalogItem, SearchRequest
 
@@ -8,6 +10,9 @@ from .schemas import CatalogItem, SearchRequest
 class ChatRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     message: str = Field(min_length=1, max_length=1000, strict=True)
+    awaiting_more: bool = False
+    character_id: Annotated[int, Field(ge=0, le=19, strict=True)] | None = None
+    seen_ids: list[Annotated[int, Field(ge=0, le=19, strict=True)]] = Field(default_factory=list, max_length=20)
 
     @field_validator("message")
     @classmethod
@@ -20,6 +25,11 @@ class EvidenceSelection(BaseModel):
     # Tidak menerima teks fakta bebas dari LLM. Kosong berarti bukti tak cukup.
     evidence_ids: list[Annotated[str, Field(strict=True, max_length=100,
         pattern=r"^profile:\d{1,2}:(deskripsi|deskripsi_lengkap|filosofi|ciri_ciri|kata_kunci):\d{1,4}$")]] = Field(max_length=6)
+    follow_up: Literal[
+        "Apakah Anda ingin tahu tokoh Wayang Sasak yang lain?",
+        "Mau berkenalan dengan tokoh Wayang Sasak lainnya?",
+        "Ingin menjelajahi tokoh Wayang Sasak yang lain?",
+    ] = "Apakah Anda ingin tahu tokoh Wayang Sasak yang lain?"
 
 
 class PromptEvidence(BaseModel):
@@ -38,6 +48,41 @@ class ChatSource(BaseModel):
     evidence_ids: list[str] = Field(default_factory=list)
 
 
+class WebSource(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    title: str = Field(min_length=1, max_length=300)
+    url: str = Field(max_length=4096)
+
+    @field_validator("url")
+    @classmethod
+    def public_https(cls, value):
+        parsed = urlsplit(value)
+        host = parsed.hostname or ""
+        if parsed.scheme != "https" or not host or parsed.username or parsed.password or any(c.isspace() for c in value):
+            raise ValueError("URL sumber tidak valid")
+        if host == "localhost" or host.endswith((".local", ".localhost")):
+            raise ValueError("URL sumber harus publik")
+        try:
+            address = ipaddress.ip_address(host)
+        except ValueError:
+            pass
+        else:
+            if not address.is_global:
+                raise ValueError("URL sumber harus publik")
+        return value
+
+
+class WebParagraph(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    text: str = Field(min_length=1, max_length=1800)
+    source_ids: list[Annotated[int, Field(ge=0, le=3, strict=True)]] = Field(min_length=1, max_length=4)
+
+
+class WebSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    paragraphs: list[WebParagraph] = Field(min_length=1, max_length=4)
+
+
 LLMStatus = Literal[
     "used", "not_needed", "not_configured", "timeout", "rate_limit",
     "invalid_key", "invalid_request", "model_unavailable", "unavailable", "invalid_response",
@@ -47,7 +92,7 @@ LLMStatus = Literal[
 
 class ChatResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    mode: Literal["answer", "catalog", "fallback_catalog"]
+    mode: Literal["answer", "catalog", "fallback_catalog", "suggestions", "conversation", "web_answer"]
     answer: str = Field(max_length=8000)
     sources: list[ChatSource]
     catalog: list[CatalogItem] | None = Field(default=None, min_length=20, max_length=20)
@@ -55,6 +100,11 @@ class ChatResponse(BaseModel):
     llm_used: bool = False
     llm_status: LLMStatus = "not_needed"
     scope_notice: str | None = Field(default=None, max_length=250)
+    character: CatalogItem | None = None
+    choices: list[CatalogItem] = Field(default_factory=list, max_length=3)
+    follow_up: str | None = Field(default=None, max_length=180)
+    web_sources: list[WebSource] = Field(default_factory=list, max_length=20)
+    search_suggestions_html: str | None = Field(default=None, max_length=30000)
 
     @field_validator("catalog")
     @classmethod

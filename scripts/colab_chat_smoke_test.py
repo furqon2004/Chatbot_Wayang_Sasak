@@ -69,11 +69,9 @@ def _assert_sources(payload, evidence):
             row = expected[evidence_id]
             assert row["id"] == source["id"] and row["label"] == source["label"]
             selected.append(row)
-    prefix = "Berdasarkan basis pengetahuan Wayang Sasak:\n\n"
-    assert payload["answer"].startswith(prefix), "Pembuka jawaban tidak valid"
-    paragraphs = [f'{row["nama"]}: {text}' for row, text in rendered_evidence(selected)]
+    paragraphs = [text for _, text in rendered_evidence(selected)]
     assert paragraphs, "Kutipan kosong"
-    assert Counter(payload["answer"][len(prefix):].split("\n\n")) == Counter(
+    assert Counter(payload["answer"].split("\n\n")) == Counter(
         "\n\n".join(paragraphs).split("\n\n")), "Kutipan tidak cocok source"
 
 

@@ -99,6 +99,19 @@ def test_unavailable_search_does_not_break_catalog_or_prediction(settings, fake_
         assert health["model_loaded"] and not health["retrieval_loaded"]
 
 
+def test_frontend_catalog_query_works_without_semantic_retrieval(settings, fake_resources):
+    with TestClient(create_app(settings, lambda _: fake_resources, lambda *_: None)) as client:
+        old_response = client.post("/search", json={"query": "daftar semua tokoh", "top_k": 3})
+        assert old_response.status_code == 503
+        response = client.post("/search", json={"query": "daftar tokoh", "top_k": 3})
+    assert response.status_code == 200
+    data = response.json()
+    assert data["mode"] == "catalog"
+    assert len(data["catalog"]) == 20
+    assert all("profil" not in item for item in data["catalog"])
+    assert data["suggestions"]
+
+
 def test_retrieval_loads_once_and_reports_count(settings, fake_resources):
     calls = []
     bundle = SimpleNamespace(semantic=mock_service().semantic, close=lambda: calls.append("close"))

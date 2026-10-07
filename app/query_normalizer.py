@@ -6,11 +6,18 @@ from urllib.parse import unquote
 
 STOPWORDS = frozenset("apa apakah siapa bagaimana jelaskan tolong coba berikan saya tentang dan atau dari yang ini itu dengan untuk adalah di ke tokoh karakter wayang sasak fungsi filosofi ciri cirinya deskripsi".split())
 
+# Whole-token aliases only: preserve stored names and avoid arbitrary corrections.
+QUERY_ALIASES = {
+    "jlskn": "jelaskan", "jlsin": "jelaskan", "sy": "saya",
+    "ttg": "tentang", "tntg": "tentang", "wyng": "wayang",
+    "wyg": "wayang", "saksak": "sasak", "nurswan": "nursiwan",
+}
+
 
 def normalize_query(query: str) -> str:
     text = unicodedata.normalize("NFKC", query).casefold()
     text = "".join(char if char.isalnum() else " " for char in text)
-    return " ".join("sasak" if token == "saksak" else token for token in text.split())
+    return " ".join(QUERY_ALIASES.get(token, token) for token in text.split())
 
 
 def terms(query: str) -> set[str]:
@@ -75,6 +82,7 @@ def classify_intent(query: str, catalog) -> IntentDecision:
     def domain(part):
         value = normalize_query(part)
         return bool(re.search(r"\b(?:wayang|tokoh|karakter|filosofi|ciri|jayagrana|gununggan)\b", value)
+                    or general_knowledge_intent(value)
                     or any(re.search(r"\b" + re.escape(name) + r"\b", value) for name in names))
     relevant = domain(query)
     if unsafe_evidence(query):
@@ -91,9 +99,14 @@ def classify_intent(query: str, catalog) -> IntentDecision:
         clause = clause.strip()
         if not clause:
             continue
+        inspected_clause = clause
+        if (re.search(r"\b(?:berapa|jumlah|total|banyak)\b", clause)
+                and re.search(r"\b(?:tokoh|karakter|wayang)\b", clause)
+                and not re.search(r"\b(?:buat|buatkan|create|bangun)\b", clause)):
+            inspected_clause = re.sub(r"\b(?:aplikasi|application)\b", "", clause)
         if (not domain(clause) or re.search(
             r"\b(?:website|aplikasi|application|kode|code|html|script|python|sql|shell|javascript|"
-            r"internet|source|presiden|bitcoin|program)\b", clause)):
+            r"source|presiden|bitcoin|program)\b", inspected_clause)):
             rejected.append(clause)
         else:
             accepted.append(clause)
@@ -103,3 +116,18 @@ def classify_intent(query: str, catalog) -> IntentDecision:
         return IntentDecision(relevant, "mixed", ". ".join(accepted),
             "Instruksi di luar domain diabaikan; jawaban hanya berdasarkan evidence Wayang Sasak.", comparison)
     return IntentDecision(relevant, "allowed", query, comparison_ids=comparison)
+
+
+def general_knowledge_intent(query: str) -> bool:
+    value = normalize_query(query)
+    standalone = {"sejarah", "sejarahnya", "jalan cerita", "alur cerita", "ceritanya", "asal usul"}
+    if value in standalone:
+        return True
+    cultural = bool(re.search(r"\b(?:wayang|sasak|menak|selaparang|lombok)\b", value))
+    topics = bool(re.search(r"\b(?:sejarah|asal|usul|cerita|ceritakan|ceritain|bercerita|kisah|lakon|epos|serat|babad|dalang|pertunjukan|jumlah|berapa|total|banyak|internet)\b", value))
+    overview = bool(re.search(
+        r"\b(?:apa itu|apa yang dimaksud dengan|jelaskan|penjelasan|informasi|mengenal)"
+        r"(?: dong| saya| aku| kepada saya| kepada aku)?(?: tentang| mengenai)? wayang sasak\b",
+        value,
+    ))
+    return cultural and (topics or overview)

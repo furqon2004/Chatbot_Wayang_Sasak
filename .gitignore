@@ -16,4 +16,6 @@ chroma*/
 wayang_db.json
 *.pt
 *.safetensors
-
+artifacts/huggingface/
+.streamlit/secrets.toml
+/artifacts/

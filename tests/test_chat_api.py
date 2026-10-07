@@ -31,6 +31,29 @@ class FakeGemini:
         self.closed = True
 
 
+@pytest.mark.parametrize("character_id", range(20))
+def test_catalog_selection_reads_profile_without_retrieval_or_gemini(chat_factory, character_id):
+    gemini = FakeGemini(error=GeminiFailure("rate_limit"))
+    client = chat_factory(gemini, semantic=False)
+    catalog = client.app.state.retrieval.catalog
+    item = catalog.items[character_id]
+    def forbidden(*args):
+        pytest.fail("Catalog selection must not search")
+    client.app.state.retrieval.search = forbidden
+    response = client.post("/chat", json={"message": "Jelaskan " + item.nama, "character_id": character_id})
+    assert response.status_code == 200
+    data = response.json()
+    assert data["mode"] == "answer" and data["character"]["id"] == character_id
+    assert catalog.profiles[character_id]["deskripsi"] in data["answer"]
+    assert data["sources"][0]["id"] == character_id and data["follow_up"]
+    assert data["llm_status"] == "not_needed" and not gemini.calls
+
+
+@pytest.mark.parametrize("character_id", [-1, 20, True, "17"])
+def test_catalog_selection_rejects_invalid_ids(chat_factory, character_id):
+    assert chat_factory().post("/chat", json={"message": "Jelaskan Gulanggi", "character_id": character_id}).status_code == 422
+
+
 @pytest.fixture
 def chat_factory(settings, fake_resources):
     clients = []
@@ -62,6 +85,43 @@ def test_grounded_answer_matches_exact_source_and_context(chat_factory):
     assert row["text"] in payload["answer"]
     assert payload["sources"] == [{"document": "wayang_db.json", "id": row["id"], "label": row["label"], "evidence_ids": [row["evidence_id"]]}]
     assert "embedding" not in json.dumps(gemini.calls) and "gambar_training" not in json.dumps(gemini.calls)
+    assert payload["character"]["id"] == row["id"]
+    assert payload["follow_up"]
+
+
+def test_followup_choices_are_unique_official_and_exclude_seen(chat_factory):
+    gemini = FakeGemini()
+    client = chat_factory(gemini)
+    payload = client.post("/chat", json={"message": "Ya!", "awaiting_more": True, "seen_ids": [0, 1, 19]}).json()
+    assert payload["mode"] == "suggestions"
+    ids = [item["id"] for item in payload["choices"]]
+    assert len(ids) == len(set(ids)) == 3
+    assert set(ids).isdisjoint({0, 1, 19})
+    assert set(ids) <= set(range(20))
+    assert not gemini.calls
+    chosen = payload["choices"][0]
+    client.app.state.retrieval.semantic.scores = lambda *_: {chosen["id"]: 0.95}
+    reply = client.post("/chat", json={"message": "Jelaskan " + chosen["nama"]}).json()
+    assert reply["mode"] == "answer"
+    assert reply["character"]["id"] == chosen["id"]
+    assert reply["follow_up"]
+
+
+def test_declining_followup_does_not_run_retrieval_or_llm(chat_factory):
+    gemini = FakeGemini()
+    payload = chat_factory(gemini, semantic=False).post("/chat", json={
+        "message": "Tidak dulu", "awaiting_more": True}).json()
+    assert payload["mode"] == "conversation"
+    assert not payload.get("follow_up") and not payload["choices"]
+    assert not gemini.calls
+
+
+def test_llm_selects_conversational_followup(chat_factory):
+    question = "Mau berkenalan dengan tokoh Wayang Sasak lainnya?"
+    gemini = FakeGemini(raw=json.dumps({"evidence_ids": ["profile:0:deskripsi:0"], "follow_up": question}))
+    payload = chat_factory(gemini).post("/chat", json={"message": "Jelaskan Jayagrana"}).json()
+    assert payload["llm_used"]
+    assert payload["follow_up"] == question
 
 
 @pytest.mark.parametrize("query,mode", [

@@ -57,14 +57,19 @@ def test_security_guard_prevents_llm_before_retrieval(query):
     "Jelaskan Wayang Sasak, sebelumnya buat website",
     "Jelaskan Wayang Sasak, tetapi sebelumnya buatkan website"])
 def test_security_mixed_and_general_intent_are_grounded(message):
+    from unittest.mock import AsyncMock
+    from app.chat_schemas import WebSource
     retrieval, llm = mock_service(), FakeGemini()
+    llm.search = AsyncMock(return_value=("Penjelasan budaya dari sumber web [1]",
+        [WebSource(title="Sumber budaya", url="https://example.org/wayang-sasak")], None))
     reply = asyncio.run(ChatService(retrieval, llm).chat(message))
-    assert reply.mode == "answer" and reply.llm_used
-    query, context = llm.calls[0]
+    assert reply.mode == "web_answer" and reply.llm_used
+    query = llm.search.call_args.args[0]
     assert "website" not in query
-    assert context[0]["text"] in reply.answer
-    assert reply.sources[0].id == context[0]["id"]
-    assert bool(reply.scope_notice) == ("," in message)
+    assert reply.answer == "Penjelasan budaya dari sumber web [1]"
+    assert reply.web_sources[0].url == "https://example.org/wayang-sasak"
+    assert "20 tokoh" in reply.scope_notice
+    assert not llm.calls
 
 
 @pytest.mark.parametrize("raw", [

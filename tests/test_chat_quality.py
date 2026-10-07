@@ -21,7 +21,7 @@ def row(text, field="deskripsi", character=0):
 def test_normalized_duplicate_keeps_both_official_evidence_ids(other):
     rows = [row("Tokoh utama dalam cerita sintetis."), row(other, "deskripsi_lengkap")]
     reply = evidence_reply(rows, "not_configured")
-    assert reply.answer.count("Tokoh 0:") == 1
+    assert reply.answer == "Tokoh utama dalam cerita sintetis."
     assert reply.sources[0].evidence_ids == [item["evidence_id"] for item in rows]
     assert not reply.llm_used
     assert evidence_reply(rows, "not_configured") == reply
@@ -59,7 +59,7 @@ def test_capped_evidence_ends_on_sentence_or_word_boundary(sentence):
     original = prefix + "kata " * 110 + "sehingga selesai."
     excerpt = original[:500]
     reply = evidence_reply([row(excerpt)], "not_configured")
-    displayed = reply.answer.split("Tokoh 0: ")[1]
+    displayed = reply.answer
     assert original.startswith(displayed)
     assert len(displayed) <= 500 and len(reply.answer) <= 8000
     if sentence:
@@ -140,7 +140,7 @@ def test_gunungan_philosophy_is_grounded_or_rejected_when_absent(has_philosophy)
     assert (evidence_id in {row["evidence_id"] for row in sent}) == has_philosophy
     if has_philosophy:
         assert reply.llm_used and reply.llm_status == "used"
-        assert reply.answer == "Berdasarkan basis pengetahuan Wayang Sasak:\n\nGunungan: " + original
+        assert reply.answer == original
         assert reply.sources[0].evidence_ids == [evidence_id]
     else:
         assert not reply.llm_used and reply.llm_status == "invalid_response"

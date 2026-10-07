@@ -16,7 +16,8 @@ async def chat(payload: ChatRequest, request: Request):
     if service is None:
         raise HTTPException(status_code=503, detail="Layanan chat belum siap")
     try:
-        response = await service.chat(payload.message)
+        response = await service.chat(payload.message, awaiting_more=payload.awaiting_more,
+                                      seen_ids=payload.seen_ids, character_id=payload.character_id)
         event(endpoint="/chat", mode=response.mode, category=response.llm_status, llm_used=response.llm_used)
         return response
     except RetrievalUnavailable:
