@@ -55,20 +55,23 @@ def render(kind, data, key="response"):
             escaped_name = re.sub(r"([\\`*_{}\[\]()<>#+.!|~-])", r"\\\1", name)
             st.markdown(f"Gambar yang kamu kirim adalah tokoh Wayang Sasak **{escaped_name}**.")
             details = data.get("profil") or {}
-            narration = data.get("narration") or {}
-            if narration.get("mode") == "answer":
-                st.text(narration["answer"])
-            else:
-                if details.get("ciri_ciri"):
-                    st.text(f"Ciri-ciri {name}:")
-                    st.text(details["ciri_ciri"])
-                st.text(f"Tentang {name}:")
-                st.text(details.get("deskripsi_lengkap") or details.get("deskripsi")
-                        or "Deskripsi belum tersedia.")
-                if details.get("filosofi"):
-                    st.text("Filosofi:")
-                    st.text(details["filosofi"])
-            st.text(narration.get("follow_up") or "Apakah Anda ingin tahu tokoh Wayang Sasak yang lain?")
+            st.caption(f"Label: {identity.get('label') or name}")
+            st.text(f"Confidence: {data.get('confidence', 0):.1%} ? Margin: {data.get('margin', 0):.1%}")
+            if details.get("ciri_ciri"):
+                st.text(f"Ciri-ciri {name}:")
+                st.text(details["ciri_ciri"])
+            st.text(f"Tentang {name}:")
+            st.text(details.get("deskripsi_lengkap") or details.get("deskripsi")
+                    or "Deskripsi belum tersedia.")
+            if details.get("filosofi"):
+                st.text("Filosofi:")
+                st.text(details["filosofi"])
+            st.text("Apakah Anda ingin tahu tokoh Wayang Sasak yang lain?")
+            if isinstance(identity.get("id"), int) and st.button("Jelaskan lebih lanjut", key=f"{key}_explain"):
+                st.session_state["pending_question"] = "Jelaskan " + name
+                st.session_state["pending_character_id"] = identity["id"]
+                st.session_state["pending_explain_more"] = True
+                st.rerun()
         elif data.get("status") == "uncertain":
             st.warning("Wayang AI belum cukup yakin untuk menetapkan satu tokoh.", icon=":material/info:")
             candidates = (data.get("top_3") or [])[:3]
@@ -103,10 +106,10 @@ def render(kind, data, key="response"):
         if data.get("search_suggestions_html"):
             # Only Google's search_entry_point metadata; never model answer HTML.
             st.html(data["search_suggestions_html"])
-        if data.get("llm_status") == "rate_limit" and data.get("mode") != "conversation":
-            st.caption("Kuota Gemini terlampaui. Jawaban profil yang tersedia tetap menggunakan basis pengetahuan lokal.")
-        elif data.get("mode") != "conversation" and data.get("llm_status") in {"unavailable", "timeout", "invalid_key", "model_unavailable", "internal"}:
-            st.caption("Gemini belum berhasil merespons. Silakan coba lagi sebentar.")
+        if data.get("mode") == "answer" and data.get("llm_status") in {
+            "rate_limit", "unavailable", "timeout", "invalid_key", "model_unavailable", "internal", "invalid_response"
+        }:
+            st.caption("Jawaban profil menggunakan basis pengetahuan lokal.")
         if data.get("scope_notice"):
             st.text(data["scope_notice"])
         catalog(data.get("choices") or data.get("catalog") or [], key)
@@ -193,11 +196,13 @@ def remember_response(kind, data):
         kind == "image" and data.get("status") == "accepted")
 
 
-def ask_question(question, character_id=None):
+def ask_question(question, character_id=None, explain_more=False):
     st.session_state.messages.append({"role": "user", "kind": "text", "text": question})
     with st.spinner("Wayang AI sedang menjawab…"):
         try:
-            if character_id is not None:
+            if explain_more:
+                kind, data = send_message(question, None, character_id=character_id, explain_more=True)
+            elif character_id is not None:
                 kind, data = send_message(question, None, character_id=character_id)
             elif st.session_state.awaiting_more:
                 kind, data = send_message(question, None, awaiting_more=True, seen_ids=st.session_state.seen_ids)
@@ -217,7 +222,8 @@ if st.session_state.awaiting_more:
         st.session_state["pending_question"] = "Tidak dulu"
 
 if "pending_question" in st.session_state:
-    ask_question(st.session_state.pop("pending_question"), st.session_state.pop("pending_character_id", None))
+    ask_question(st.session_state.pop("pending_question"), st.session_state.pop("pending_character_id", None),
+                 st.session_state.pop("pending_explain_more", False))
     st.rerun()
 
 with st.container(border=True):
@@ -257,14 +263,6 @@ elif submitted and uploaded is not None:
         with st.spinner("Wayang AI sedang mengenali tokoh…"):
             try:
                 kind, data = send_message("", uploaded)
-                identity = data.get("prediksi") or {}
-                if data.get("status") == "accepted" and identity.get("nama"):
-                    try:
-                        narration = request_api("/chat", payload={"message": "Jelaskan " + identity["nama"]})
-                        if narration.get("mode") == "answer" and (narration.get("character") or {}).get("id") == identity.get("id"):
-                            data["narration"] = narration
-                    except BackendError:
-                        pass
             except BackendError as exc:
                 kind, data = "error", str(exc)
         remember_response(kind, data)

@@ -1,6 +1,6 @@
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from urllib.parse import urlsplit
 import ipaddress
 
@@ -11,8 +11,15 @@ class ChatRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     message: str = Field(min_length=1, max_length=1000, strict=True)
     awaiting_more: bool = False
+    explain_more: bool = False
     character_id: Annotated[int, Field(ge=0, le=19, strict=True)] | None = None
     seen_ids: list[Annotated[int, Field(ge=0, le=19, strict=True)]] = Field(default_factory=list, max_length=20)
+
+    @model_validator(mode="after")
+    def explanation_identity(self):
+        if self.explain_more and self.character_id is None:
+            raise ValueError("Penjelasan membutuhkan identitas tokoh")
+        return self
 
     @field_validator("message")
     @classmethod

@@ -102,7 +102,7 @@ def test_prediction_rendering_including_null_identity(status):
         assert "Filosofi:" in rendered and "Nilai keberanian" in rendered
         assert "Apakah Anda ingin tahu tokoh Wayang Sasak yang lain?" in rendered
         assert not at.expander
-        assert "Confidence:" not in rendered and "Margin:" not in rendered
+        assert "Confidence:" in rendered and "Margin:" in rendered
     else:
         assert "Wayang AI belum cukup yakin untuk menetapkan satu tokoh." in at.warning[0].value
         assert "Dugaan terdekat: Jayengrana (80.0%)." in rendered
@@ -468,3 +468,24 @@ def test_web_answer_shows_citations_without_unrelated_character_image():
     assert len(at.get("link_button")) == 1
     assert at.get("link_button")[0].proto.url == "https://example.org/museum"
     assert any(t.value == "Ringkasan sejarah [1]" for t in at.text)
+
+
+def test_web_failure_renders_catalog_without_provider_details():
+    import asyncio
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+    from app.chat import ChatService
+    from app.gemini import GeminiFailure
+    from evaluation.mock_search import mock_service
+    reply = asyncio.run(ChatService(mock_service(), SimpleNamespace(
+        search=AsyncMock(side_effect=GeminiFailure("rate_limit")))).chat("Sejarah Wayang Sasak"))
+    at = app_test()
+    at.session_state["messages"] = [{"role": "assistant", "kind": "chat", "data": reply.model_dump()}]
+    with patch("ui_client.request_api", return_value={"status": "ok"}):
+        at.run()
+    assert not at.exception
+    rendered = "\n".join(item.value for kind in (at.text, at.markdown, at.caption) for item in kind)
+    assert "Informasi internet belum dapat diverifikasi" in rendered
+    assert "Gemini" not in rendered and "kuota" not in rendered.casefold()
+    for item in reply.catalog:
+        assert any(item.nama in button.label for button in at.button)

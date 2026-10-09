@@ -111,6 +111,9 @@ class Settings:
     gemini_model: str = "gemini-3.6-flash"
     gemini_timeout_seconds: float = 15.0
     gemini_search_timeout_seconds: float = 45.0
+    gemini_web_max_attempts: int = 2
+    wayang_web_cache_ttl_seconds: int = 900
+    wayang_web_cache_max_entries: int = 32
     gemini_max_attempts: int = 2
     chat_enabled: bool = False
     security: SecuritySettings = field(default_factory=SecuritySettings)
@@ -132,8 +135,12 @@ class Settings:
             raise ValueError("GEMINI_MODEL tidak valid")
         if not math.isfinite(self.gemini_timeout_seconds) or not 0 < self.gemini_timeout_seconds <= 60:
             raise ValueError("GEMINI_TIMEOUT_SECONDS harus > 0 dan <= 60")
-        if not math.isfinite(self.gemini_search_timeout_seconds) or not 0 < self.gemini_search_timeout_seconds <= 60:
-            raise ValueError("GEMINI_SEARCH_TIMEOUT_SECONDS harus > 0 dan <= 60")
+        if not math.isfinite(self.gemini_search_timeout_seconds) or not 0 < self.gemini_search_timeout_seconds <= 90:
+            raise ValueError("GEMINI_SEARCH_TIMEOUT_SECONDS harus > 0 dan <= 90")
+        if not 1 <= self.gemini_web_max_attempts <= 2:
+            raise ValueError("GEMINI_WEB_MAX_ATTEMPTS harus 1-2")
+        if not 1 <= self.wayang_web_cache_max_entries <= 32 or self.wayang_web_cache_ttl_seconds <= 0:
+            raise ValueError("Batas cache web tidak valid")
         if not 1 <= self.gemini_max_attempts <= 3:
             raise ValueError("GEMINI_MAX_ATTEMPTS harus 1-3")
 
@@ -168,5 +175,8 @@ class Settings:
             gemini_model=os.getenv("GEMINI_MODEL", "gemini-3.6-flash"),
             gemini_timeout_seconds=_timeout_env(),
             gemini_search_timeout_seconds=float(os.getenv("GEMINI_SEARCH_TIMEOUT_SECONDS", "45")),
+            gemini_web_max_attempts=_positive_int_env("GEMINI_WEB_MAX_ATTEMPTS", 2),
+            wayang_web_cache_ttl_seconds=_positive_int_env("WAYANG_WEB_CACHE_TTL_SECONDS", 900),
+            wayang_web_cache_max_entries=_positive_int_env("WAYANG_WEB_CACHE_MAX_ENTRIES", 32),
             gemini_max_attempts=_positive_int_env("GEMINI_MAX_ATTEMPTS", 2),
         )

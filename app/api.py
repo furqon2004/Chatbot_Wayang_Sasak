@@ -109,7 +109,8 @@ def create_app(
             LOGGER.warning("Gemini unavailable saat startup")
         if active_gemini_loader is not None:
             from .chat import ChatService
-            app.state.chat = ChatService(app.state.retrieval, gemini, active_settings.gemini_timeout_seconds)
+            app.state.chat = ChatService(app.state.retrieval, gemini, active_settings.gemini_timeout_seconds,
+                                         active_settings.gemini_search_timeout_seconds)
         app.state.ready = True
         try:
             yield

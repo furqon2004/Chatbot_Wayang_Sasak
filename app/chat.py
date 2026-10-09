@@ -119,12 +119,15 @@ def evidence_reply(rows: list[dict], status: str) -> ChatResponse:
 
 
 class ChatService:
-    def __init__(self, retrieval, gemini=None, timeout_seconds: float = 15):
+    def __init__(self, retrieval, gemini=None, timeout_seconds: float = 15, web_timeout_seconds: float = 90, clock=time.monotonic):
+        from .rag_cache import RagCache
+        self.rag_cache = RagCache(clock)
         self.retrieval = retrieval
         self.gemini = gemini
         self.timeout_seconds = timeout_seconds
+        self.web_timeout_seconds = web_timeout_seconds
 
-    async def chat(self, message: str, *, awaiting_more=False, seen_ids=(), character_id=None) -> ChatResponse:
+    async def chat(self, message: str, *, awaiting_more=False, seen_ids=(), character_id=None, explain_more=False) -> ChatResponse:
         normalized = normalize_query(message).strip(" .!?")
         if awaiting_more and normalized in {"ya", "iya", "iya dong", "ya mau", "mau", "boleh", "boleh dong", "oke", "ok", "lanjut", "yuk", "tentu"}:
             candidates = [item for item in self.retrieval.catalog.items if item.id not in seen_ids]
@@ -139,6 +142,8 @@ class ChatService:
         if decision.intent in {"unsupported", "malicious"}:
             return catalog_reply(self.retrieval.catalog.response(message, "", True))
         if character_id is not None:
+            if explain_more:
+                return await self._answer(message, character_id=character_id)
             return self.character_profile(character_id)
         query = normalize_query(decision.query)
         count_question = bool(re.search(r"\b(?:jumlah|berapa|banyak|total)\b", query) and
@@ -147,9 +152,11 @@ class ChatService:
             return ChatResponse(mode="conversation", answer=CATALOG_SCOPE, sources=[ChatSource()],
                                 follow_up="Apakah Anda ingin tahu tokoh Wayang Sasak yang lain?")
         story_question = bool(re.search(r"\b(?:sejarah|cerita|kisah|lakon|asal usul)\b", query))
-        if general_knowledge_intent(query) or count_question or story_question:
+        named_character = any(re.search(r"(?<!\w)" + re.escape(normalize_query(name)) + r"(?!\w)", query)
+                              for item in self.retrieval.catalog.items for name in (item.nama, item.label))
+        if not named_character and (general_knowledge_intent(query) or count_question or story_question):
             return await self._web_answer(decision.query)
-        reply = await self._answer(decision.query, decision.comparison_ids)
+        reply = await self._answer(decision.query, decision.comparison_ids, original_message=message)
         reply.scope_notice = decision.scope_notice
         return reply
 
@@ -175,7 +182,7 @@ class ChatService:
         status = "not_configured"
         if self.gemini is not None and callable(getattr(self.gemini, "search", None)):
             try:
-                answer, sources, suggestions_html = await asyncio.wait_for(self.gemini.search(message), timeout=60)
+                answer, sources, suggestions_html = await asyncio.wait_for(self.gemini.search(message), timeout=self.web_timeout_seconds)
                 if not sources:
                     raise GeminiFailure("insufficient_evidence")
                 return ChatResponse(mode="web_answer", answer=answer, sources=[], web_sources=sources,
@@ -189,25 +196,18 @@ class ChatService:
             except Exception:
                 status = "internal"
         LOGGER.warning("Web chat failed: category=%s", status)
-        failure_message = {
-            "rate_limit": "Batas kuota Gemini sedang tercapai. Jawaban internet belum bisa dibuat sampai kuota tersedia kembali.",
-            "not_configured": "Layanan jawaban internet belum dikonfigurasi. Pengelola perlu mengaktifkan chat dan memasang API key Gemini.",
-            "invalid_key": "Akses Gemini ditolak. Pengelola perlu memeriksa API key dan izin aksesnya.",
-            "model_unavailable": "Model Gemini yang dikonfigurasi tidak tersedia untuk permintaan ini. Pengelola perlu memeriksa pengaturan model.",
-            "timeout": "Pencarian atau penyusunan jawaban internet melewati batas waktu. Silakan kirim ulang pertanyaan sebentar lagi.",
-            "unavailable": "Layanan jawaban internet sedang tidak dapat diakses. Saya belum dapat memastikan jawabannya; silakan coba lagi setelah koneksi atau layanan pulih.",
-            "invalid_request": "Layanan Gemini menolak permintaan pencarian. Pengelola perlu memeriksa konfigurasi integrasi.",
-            "invalid_response": "Jawaban Gemini tidak lolos pemeriksaan format atau kelengkapan. Silakan kirim ulang pertanyaan.",
-            "insufficient_evidence": "Hasil pencarian belum menyertakan kutipan sumber yang dapat digunakan. Silakan coba pertanyaan yang lebih spesifik, misalnya tentang asal-usul Wayang Sasak.",
-        }.get(status, "Terjadi kesalahan internal saat memproses jawaban internet. Pengelola perlu memeriksa log backend.")
-        return ChatResponse(mode="conversation", answer=failure_message,
-            sources=[], llm_status=status)
+        return ChatResponse(mode="fallback_catalog",
+            answer="Informasi internet belum dapat diverifikasi saat ini. Basis pengetahuan Wayang AI memuat 20 tokoh Wayang Sasak yang dapat Anda jelajahi.",
+            sources=[ChatSource()], catalog=self.retrieval.catalog.items,
+            llm_status="unavailable", follow_up="Apakah Anda ingin tahu tokoh Wayang Sasak yang lain?")
 
-    async def _answer(self, message: str, comparison_ids=frozenset()) -> ChatResponse:
+    async def _answer(self, message: str, comparison_ids=frozenset(), *, character_id=None, original_message=None) -> ChatResponse:
         # General overview is routed to an explicit cultural retrieval query.
         # Ranking/threshold are unchanged; insufficient evidence still falls back.
         retrieval_query = ("Siapa tokoh utama Wayang Sasak?" if normalize_query(message) in
                            {"jelaskan wayang sasak", "apa itu wayang sasak", "explain wayang sasak"} else message)
+        if character_id is not None:
+            retrieval_query = "Jelaskan " + self.retrieval.catalog.items[character_id].nama
         result = await run_in_threadpool(self.retrieval.search, retrieval_query, 3)
         if isinstance(result, CatalogSearch):
             return catalog_reply(result)
@@ -215,10 +215,17 @@ class ChatService:
             [hit for hit in result.results if math.isfinite(hit.score) and hit.score >= self.retrieval.threshold],
             self.retrieval.catalog,
         )
+        if character_id is not None:
+            context = [row for row in context if row["id"] == character_id]
         if comparison_ids and not comparison_ids <= {row["id"] for row in context}:
             context = []
         if not context:
             return catalog_reply(self.retrieval.catalog.response(message, result.normalized_query, True))
+        cache_key = self.rag_cache.key(original_message or message, message, context,
+            character_id, comparison_ids, self.gemini)
+        cached = self.rag_cache.get(cache_key)
+        if cached is not None:
+            return cached
         status = "not_configured"
         follow_up = "Apakah Anda ingin tahu tokoh Wayang Sasak yang lain?"
         selected = context[:3]
@@ -261,4 +268,6 @@ class ChatService:
         reply.character = self.retrieval.catalog.items[selected[0]["id"]]
         reply.follow_up = follow_up
         reply.suggestions = []
+        if status == "used":
+            self.rag_cache.put(cache_key, reply)
         return reply

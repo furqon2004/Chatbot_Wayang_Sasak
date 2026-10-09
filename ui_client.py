@@ -13,7 +13,7 @@ def request_api(path, *, payload=None, image=None):
     token = os.getenv("WAYANG_SERVICE_TOKEN", "")
     headers = {"Authorization": f"Bearer {token}"} if token else {}
     try:
-        with httpx.Client(timeout=75, follow_redirects=False, trust_env=False) as client:
+        with httpx.Client(timeout=105, follow_redirects=False, trust_env=False) as client:
             if path == "/health":
                 response = client.get(base + path, timeout=3)
             elif image is not None:
@@ -51,7 +51,7 @@ def request_api(path, *, payload=None, image=None):
         raise BackendError("Format respons backend tidak valid. Silakan coba lagi.") from None
 
 
-def send_message(text, uploaded=None, *, awaiting_more=False, seen_ids=(), character_id=None):
+def send_message(text, uploaded=None, *, awaiting_more=False, seen_ids=(), character_id=None, explain_more=False):
     if uploaded is not None:
         if not uploaded.size or uploaded.size > 10 * 1024 * 1024:
             raise BackendError("Gunakan gambar tidak kosong dengan ukuran maksimal 10 MB.")
@@ -65,6 +65,8 @@ def send_message(text, uploaded=None, *, awaiting_more=False, seen_ids=(), chara
     payload = {"message": text.strip()}
     if character_id is not None:
         payload["character_id"] = character_id
+    if explain_more:
+        payload["explain_more"] = True
     if awaiting_more:
         payload.update(awaiting_more=True, seen_ids=list(seen_ids))
     return "chat", request_api("/chat", payload=payload)
