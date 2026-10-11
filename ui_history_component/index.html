@@ -1,0 +1,40 @@
+<!doctype html><html><body><script>
+const key = 'wayang-active-chat-v1';
+let boot = null, timer = null;
+function send(type, extra={}) { window.parent.postMessage({isStreamlitMessage:true,type,...extra}, '*'); }
+function value(data) { send('streamlit:setComponentValue', {value:{boot,...data},dataType:'json'}); }
+function expire() { try {sessionStorage.removeItem(key);} catch (_) {} value({expired:true}); }
+function schedule(saved, ttl) {
+  clearTimeout(timer);
+  if (!saved || !saved.last_question) return;
+  const remaining = saved.last_question * 1000 + ttl * 1000 - Date.now();
+  if (remaining <= 0) expire(); else timer = setTimeout(expire, remaining);
+}
+window.addEventListener('message', event => {
+  if (event.source !== window.parent || event.data.type !== 'streamlit:render') return;
+  const a = event.data.args;
+  try {
+    if (boot !== a.boot) {
+      boot = a.boot;
+      if (a.reset) sessionStorage.removeItem(key);
+      let saved = JSON.parse(sessionStorage.getItem(key) || 'null');
+      if (saved && Date.now() - saved.last_question * 1000 >= a.ttl * 1000) {
+        sessionStorage.removeItem(key); saved = null;
+      }
+      value({snapshot:saved}); schedule(saved,a.ttl);
+    } else if (a.snapshot !== null) {
+      if (a.snapshot.messages.length) sessionStorage.setItem(key,JSON.stringify(a.snapshot));
+      else sessionStorage.removeItem(key);
+      schedule(a.snapshot,a.ttl);
+    }
+  } catch (_) { value({storage_error:true}); }
+});
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) {
+    try { const saved=JSON.parse(sessionStorage.getItem(key)||'null'); if(saved) schedule(saved,300); }
+    catch (_) { value({storage_error:true}); }
+  }
+});
+send('streamlit:componentReady',{apiVersion:1});
+send('streamlit:setFrameHeight',{height:0});
+</script></body></html>

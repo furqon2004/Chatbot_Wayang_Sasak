@@ -116,7 +116,10 @@ def test_security_invalid_evidence_is_discarded_before_llm(change):
         hit.evidence = ["Fakta palsu"]
     retrieval.search = lambda *_: result
     reply = asyncio.run(ChatService(retrieval, llm).chat("Jelaskan Jayangrana"))
-    assert reply.mode == "fallback_catalog" and not llm.calls
+    assert reply.mode == "answer" and not llm.calls
+    assert reply.character.id == 0 and not reply.llm_used
+    assert reply.answer == retrieval.catalog.profiles[0]["deskripsi"]
+    assert reply.sources[0].evidence_ids == ["profile:0:deskripsi:0"]
 
 
 def test_security_evidence_deduplication_and_poison_after_truncation():

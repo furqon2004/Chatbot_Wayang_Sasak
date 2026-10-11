@@ -178,7 +178,10 @@ def test_missing_key_and_missing_retrieval_are_distinct(chat_factory):
     assert payload["llm_status"] == "not_configured" and payload["sources"]
     assert not payload["llm_used"]
     client = chat_factory(semantic=False)
-    assert client.post("/chat", json={"message": "Jelaskan Jayangrana"}).status_code == 503
+    local = client.post("/chat", json={"message": "Jelaskan Jayangrana"})
+    assert local.status_code == 200 and local.json()["character"]["id"] == 0
+    assert not local.json()["llm_used"]
+    assert client.post("/chat", json={"message": "Apa filosofi Jayangrana?"}).status_code == 503
     assert len(client.post("/chat", json={"message": "contoh tokoh"}).json()["catalog"]) == 20
 
 

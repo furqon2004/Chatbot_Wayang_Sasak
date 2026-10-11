@@ -263,3 +263,57 @@ def test_evaluation_records_subject_swap_with_valid_comparison_ids():
         "evidence_ids": ["profile:0:filosofi:0", "profile:2:filosofi:0"]})
     reply = ask(service, "Bandingkan filosofi Jayangrana dan Maktal")
     assert reply.narrative
+
+
+@pytest.mark.parametrize("failure", [ProviderFailure("unavailable"),
+    ProviderFailure("invalid_response"), ValueError("invalid fixture")])
+def test_general_explanation_failure_shows_honest_local_profile_without_caching(failure):
+    service, provider, _ = setup()
+    provider.narrate.side_effect = failure
+    reply = ask(service, "jelaskan saya tentang tokoh jayangrana")
+    assert reply.mode == "answer" and reply.character.id == 0
+    expected = "unavailable" if isinstance(failure, ProviderFailure) and failure.category == "unavailable" else "invalid_response"
+    assert ("Layanan penjelasan sedang tidak tersedia" if expected == "unavailable"
+            else "Penjelasan belum dapat diverifikasi") in reply.answer
+    assert "Berikut informasi profil lokal" in reply.answer
+    assert reply.sources and not reply.llm_used and not reply.narrative
+    assert reply.llm_status == expected and not service.rag_cache.entries
+    assert not reply.catalog
+
+
+def test_rejected_general_narrative_displays_local_profile_not_model_text():
+    service, provider, _ = setup()
+    provider.narrate.side_effect = None
+    provider.narrate.return_value = encoded(section("KLAIM MODEL DITOLAK", identity=19))
+    reply = ask(service, "jelaskan saya tentang tokoh jayangrana")
+    assert reply.character.id == 0 and reply.mode == "answer"
+    assert reply.llm_status == "invalid_response" and not reply.llm_used
+    assert "KLAIM MODEL DITOLAK" not in reply.answer
+    assert "Dalam fixture, Jayangrana menjadi lambang raga manusia." in reply.answer
+    assert reply.sources and all(source.id == 0 for source in reply.sources)
+    assert not reply.catalog and not service.rag_cache.entries
+
+
+@pytest.mark.parametrize("identity", range(20))
+@pytest.mark.parametrize("prefix", ["aku pengen tahu tentang", "jelaskan saya tentang tokoh"])
+def test_every_named_profile_available_even_without_retrieval_hits(identity, prefix):
+    service, provider, _ = setup()
+    service.retrieval.semantic.scores = lambda *_: {}
+    service.retrieval.threshold = 1.0
+    item = service.retrieval.catalog.items[identity]
+    reply = ask(service, f"{prefix} {item.nama}")
+    assert reply.mode == "answer" and reply.character.id == identity
+    assert reply.sources and all(source.id == identity for source in reply.sources)
+    assert not reply.catalog and not reply.llm_used
+    assert reply.conversation_context.subject_ids == [identity]
+    provider.narrate.assert_not_called()
+    provider.search.assert_not_called()
+
+
+def test_unknown_fact_does_not_become_generic_local_profile():
+    service, provider, _ = setup()
+    service.retrieval.semantic.scores = lambda *_: {}
+    service.retrieval.threshold = 1.0
+    reply = ask(service, "Kapan Munigarim lahir dalam Wayang Sasak?")
+    assert reply.mode == "fallback_catalog" and not reply.character
+    provider.narrate.assert_not_called()

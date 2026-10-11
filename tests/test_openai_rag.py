@@ -280,7 +280,10 @@ def test_chat_rejects_bad_output_and_does_not_cache_fallback(settings, raw):
         try:
             for _ in range(2):
                 reply = await service.chat("Jelaskan Jayangrana")
-                assert reply.mode == "fallback_catalog" and not reply.cache_hit
+                assert reply.mode == "answer" and not reply.cache_hit
+                assert reply.character.id == 0 and not reply.catalog
+                assert reply.llm_status == "invalid_response" and not reply.llm_used
+                assert "Berikut informasi profil lokal" in reply.answer
                 assert reply.provider_requests == 1 and not reply.llm_used
             assert not service.rag_cache.entries
         finally:

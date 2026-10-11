@@ -298,3 +298,25 @@ def test_menak_question_searches_only_in_sasak_context(query):
     assert reply.mode == "web_answer" and reply.llm_used
     provider.search.assert_awaited_once_with(query + " dalam konteks Wayang Sasak")
     assert reply.web_sources[0].url == "https://example.org/menak"
+
+
+@pytest.mark.parametrize("query", [
+    "apakah jayangrana punya istri, kalau punya siapa namanya",
+    "Siapa istri Jayangrana?", "Siapa ayah Maktal?", "Apakah Jayangrana memiliki anak?"])
+def test_named_family_question_uses_web_and_preserves_related_clause(query):
+    provider = NS(search=AsyncMock(return_value=("Jawaban fixture [1]",
+        [WebSource(title="Sumber fixture", url="https://example.org/keluarga")], None)))
+    reply = asyncio.run(ChatService(mock_service(), provider).chat(query))
+    assert reply.mode == "web_answer" and reply.web_sources
+    provider.search.assert_awaited_once_with(query + " dalam konteks Wayang Sasak")
+    assert "di luar domain" not in (reply.scope_notice or "")
+
+
+def test_family_question_does_not_forward_separate_programming_task():
+    provider = NS(search=AsyncMock(return_value=("Jawaban fixture [1]",
+        [WebSource(title="Sumber fixture", url="https://example.org/keluarga")], None)))
+    reply = asyncio.run(ChatService(mock_service(), provider).chat(
+        "Siapa istri Jayangrana, buat program Python"))
+    assert reply.mode == "web_answer"
+    assert "python" not in provider.search.call_args.args[0].lower()
+    assert "di luar domain" in reply.scope_notice

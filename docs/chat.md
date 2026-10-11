@@ -57,3 +57,28 @@ Hentikan pemeriksaan bila provider gagal. Batas tiga panggilan SDK dihitung
 bersama untuk narasi dan web; memuat ulang UI tidak mereset batas backend.
 
 Referensi kontrak: [OpenAI web search](https://developers.openai.com/api/docs/guides/tools-web-search).
+
+
+## Pemakaian lokal biasa (bukan smoke)
+
+Jangan memakai `local_browser_smoke.py` sebagai server percakapan sehari-hari:
+skrip itu sengaja berhenti setelah kegagalan pertama atau tiga panggilan SDK total.
+Kegagalan narasi pada smoke juga menghentikan pencarian web berikutnya.
+
+Hentikan backend smoke dengan Ctrl+C, kemudian jalankan:
+
+```powershell
+.\.venv\Scripts\python.exe -B .\scripts\local_chat.py --direct
+```
+
+Launcher ini memakai port 8011 yang sama, mengaktifkan narasi dan web, serta
+membaca konfigurasi lokal hanya saat pengguna menjalankannya. `--direct` memilih
+HTTPX trust_env=False untuk proses tersebut; TLS tetap aktif. Tanpa flag itu,
+HTTPX mengikuti environment. Tidak mengubah `.env`, proxy sistem, atau default aplikasi.
+Jangan gunakan koneksi langsung bila bertentangan dengan kebijakan jaringan.
+
+Tidak ada batas tiga panggilan per sesi pada launcher aplikasi ini; permintaan
+dapat memakai kuota API. SDK tanpa retry, satu attempt aplikasi per operasi.
+Cache, pembatasan kapasitas dan circuit breaker tetap berlaku. Kegagalan narasi
+tidak menghentikan web, dan kegagalan web tidak menghentikan narasi.
+Pengujian mock mencakup kedua arah; ini bukan bukti konektivitas akun nyata.

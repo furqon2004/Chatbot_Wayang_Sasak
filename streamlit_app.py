@@ -3,9 +3,11 @@ from dotenv import load_dotenv
 from PIL import Image, UnidentifiedImageError
 import re
 import streamlit as st
+import streamlit.components.v1 as components
 
 from ui_client import BackendError, request_api, send_message, web_answer_markdown
 from ui_media import character_image
+from ui_history import sync_history, clear_history, touch
 
 load_dotenv()
 st.set_page_config(page_title="Wayang AI · Wayang Sasak", page_icon="◈",
@@ -133,6 +135,7 @@ def render(kind, data, key="response"):
         catalog(data.get("results") or data.get("catalog") or [], key)
 
 
+sync_history()
 st.session_state.setdefault("messages", [])
 st.session_state.setdefault("image_generation", 0)
 st.session_state.setdefault("text_generation", 0)
@@ -143,10 +146,11 @@ st.session_state.setdefault("conversation_context", None)
 with st.sidebar:
     st.subheader("Jelajahi Wayang Sasak")
     if st.button("Percakapan Baru", icon=":material/add_comment:", width="stretch"):
-        st.session_state.clear()
+        clear_history()
         st.rerun()
     show_catalog = st.button("Lihat katalog", icon=":material/menu_book:", width="stretch")
     if show_catalog:
+        touch()
         st.session_state.pop("search_result", None)
         st.session_state.messages.append({"role": "user", "kind": "text", "text": "Lihat katalog"})
         try:
@@ -157,11 +161,16 @@ with st.sidebar:
         st.session_state["awaiting_more"] = False
         st.session_state["conversation_context"] = None
         st.rerun()
-    st.caption("Riwayat hanya tersedia selama sesi ini.")
+    st.caption("Percakapan sementara di tab ini, tetap ada saat refresh. Dihapus setelah 5 menit tanpa pertanyaan atau saat Percakapan Baru.")
 
 
 @st.fragment(run_every="30s")
 def header():
+    import time
+    if (st.session_state.get("last_question")
+            and time.time() - st.session_state.last_question >= 300):
+        clear_history()
+        st.rerun(scope="app")
     with st.container(border=True, horizontal=True, horizontal_alignment="distribute",
                       vertical_alignment="center"):
         st.markdown("### :yellow[◈] WAYANG AI", width="content")
@@ -173,6 +182,20 @@ def header():
 
 
 header()
+message_count = len(st.session_state.messages)
+if message_count and st.session_state.get("last_scrolled_message_count") != message_count:
+    st.session_state["last_scrolled_message_count"] = message_count
+    components.html("""
+    <script>
+    const doc = window.parent.document;
+    const scroll = () => {
+      const main = doc.querySelector('[data-testid="stMain"]');
+      if (main) main.scrollTo({top: main.scrollHeight, behavior: 'smooth'});
+    };
+    setTimeout(scroll, 150);
+    setTimeout(scroll, 600);
+    </script>
+    """, height=0)
 if not st.session_state.messages:
     with st.container(horizontal_alignment="center", gap="medium"):
         st.markdown("# :yellow[◇ ◆ ◇]", width="content")
@@ -216,6 +239,7 @@ def remember_response(kind, data):
 
 
 def ask_question(question, character_id=None, explain_more=False):
+    touch()
     st.session_state.messages.append({"role": "user", "kind": "text", "text": question})
     with st.spinner("Wayang AI sedang menjawab…"):
         try:
@@ -298,6 +322,7 @@ elif submitted and uploaded is not None:
     if not 0 < uploaded.size <= 10 * 1024 * 1024:
         st.warning("Gunakan gambar tidak kosong dengan ukuran maksimal 10 MB.")
     else:
+        touch()
         st.session_state.messages.append({"role": "user", "kind": "image", "text": "",
                                           "image_bytes": uploaded.getvalue()})
         with st.spinner("Wayang AI sedang mengenali tokoh…"):
@@ -319,3 +344,29 @@ elif submitted:
         st.session_state.image_generation += 1
         st.session_state.text_generation += 1
         st.rerun()
+
+
+# Bind once per rerun; native input blur syncs its value before clicking Send.
+components.html("""
+<script>
+const doc = window.parent.document;
+if (window.parent.wayangEnterHandler) {
+  doc.removeEventListener('keydown', window.parent.wayangEnterHandler, true);
+}
+window.parent.wayangEnterHandler = (event) => {
+  if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return;
+  if (!event.target.closest('.st-key-chat_composer') || event.target.tagName !== 'INPUT') return;
+  if (event.target.disabled || !event.target.value.trim()) return;
+  event.preventDefault();
+  const main = doc.querySelector('[data-testid="stMain"]');
+  if (main) main.scrollTo({top: main.scrollHeight, behavior: 'smooth'});
+  event.target.blur();
+  setTimeout(() => {
+    const button = [...doc.querySelectorAll('.st-key-chat_composer button')]
+      .find(item => item.textContent.includes('Kirim'));
+    if (button && !button.disabled) button.click();
+  }, 150);
+};
+doc.addEventListener('keydown', window.parent.wayangEnterHandler, true);
+</script>
+""", height=0)

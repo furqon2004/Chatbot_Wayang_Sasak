@@ -303,6 +303,13 @@ class ChatService:
         named_character = any(re.search(r"(?<!\w)" + re.escape(normalize_query(name)) + r"(?!\w)", query)
                               for item in self.retrieval.catalog.items for name in (item.nama, item.label))
         topic = local_overview_intent(decision.query)
+        family_question = bool(re.search(
+            r"\b(?:istri|isteri|suami|pasangan|menikah|pernikahan|ayah|ibu|anak|orang tua|saudara|keturunan)(?:nya)?\b", query))
+        if named_character and family_question:
+            reply = await self._web_answer(decision.query + " dalam konteks Wayang Sasak")
+            if decision.scope_notice:
+                reply.scope_notice = " ".join(filter(None, [reply.scope_notice, decision.scope_notice]))
+            return reply
         if not named_character and topic:
             reply = await self._answer(decision.query, original_message=original_message or message, overview_topic=topic, resolved_context=resolved_context)
             if decision.scope_notice:
@@ -366,6 +373,21 @@ class ChatService:
         retrieval_query = message
         narrative = getattr(self.provider, "rag_provider", None) == "openai"
         resolved = resolved_context or {}
+        def requested_local_profile():
+            from .conversation import named_ids
+            ids = named_ids(original_message or message, self.retrieval.catalog)
+            if len(ids) != 1 or comparison_ids or overview_topic:
+                return None
+            item = self.retrieval.catalog.items[ids[0]]
+            text = normalize_query(original_message or message)
+            for name in sorted((item.nama, item.label), key=len, reverse=True):
+                text = re.sub(r"(?<!\w)" + re.escape(normalize_query(name)) + r"(?!\w)", "SUBJEK", text)
+            if re.fullmatch(
+                r"(?:(?:aku|saya) (?:pengen|ingin|mau) (?:tahu|tau|mengenal)(?: lebih banyak)?(?: tentang)?|"
+                r"(?:tolong |coba )?(?:jelaskan|ceritakan|kenalkan)(?: saya| aku)?(?: tentang)?|"
+                r"siapa(?:kah)?|profil(?: tokoh)?)(?: tokoh)? SUBJEK(?: dong| ya)?", text):
+                return self.character_profile(ids[0])
+            return None
         if narrative and resolved.get("style") in {"simplify", "summary", "detail"} and resolved.get("subject_ids"):
             names = " dan ".join(self.retrieval.catalog.items[i].nama for i in resolved["subject_ids"])
             prefix = {"philosophy": "Apa filosofi ", "traits": "Apa ciri-ciri "}.get(resolved.get("evidence_intent"), "Jelaskan ")
@@ -377,10 +399,16 @@ class ChatService:
         try:
             result = await run_in_threadpool(self.retrieval.search, retrieval_query, 3)
         except RetrievalUnavailable:
+            local = requested_local_profile()
+            if local is not None:
+                return local
             if overview_topic:
                 return overview_fallback(self.retrieval.catalog)
             raise
         if isinstance(result, CatalogSearch):
+            local = requested_local_profile()
+            if local is not None:
+                return local
             if overview_topic:
                 return await self._web_answer(message)
             if narrative:
@@ -426,6 +454,9 @@ class ChatService:
         if comparison_ids and not comparison_ids <= {row["id"] for row in context}:
             context = []
         if not context:
+            local = requested_local_profile()
+            if local is not None:
+                return local
             if narrative:
                 from .narrative import narrative_fallback
                 return narrative_fallback(self.retrieval.catalog)
@@ -440,6 +471,17 @@ class ChatService:
             return cached
         if narrative:
             from .narrative import render_narrative, narrative_fallback, answer_style
+            def failure_reply(status):
+                fallback = narrative_fallback(self.retrieval.catalog, status)
+                identities = resolved.get("subject_ids", [])
+                if (len(identities) == 1 and not field
+                        and status not in {"insufficient_evidence", "not_configured"}):
+                    local = self.character_profile(identities[0])
+                    if local.mode == "answer":
+                        local.answer = fallback.answer + "\n\nBerikut informasi profil lokal:\n\n" + local.answer
+                        local.llm_status = status
+                        return local
+                return fallback
             try:
                 narrative_context = {**resolved, "style": answer_style(original_message or message)}
                 raw = await asyncio.wait_for(self.provider.narrate(message, context, narrative_context), self.timeout_seconds)
@@ -451,13 +493,13 @@ class ChatService:
                     self.rag_cache.put(cache_key, reply)
                 return reply
             except asyncio.TimeoutError:
-                return narrative_fallback(self.retrieval.catalog, "timeout")
+                return failure_reply("timeout")
             except ProviderFailure as exc:
-                return narrative_fallback(self.retrieval.catalog, exc.category)
+                return failure_reply(exc.category)
             except (ValueError, TypeError):
-                return narrative_fallback(self.retrieval.catalog, "invalid_response")
+                return failure_reply("invalid_response")
             except Exception:
-                return narrative_fallback(self.retrieval.catalog, "internal")
+                return failure_reply("internal")
         status = "not_configured"
         follow_up = "Apakah Anda ingin tahu tokoh Wayang Sasak yang lain?"
         selected = context[:3]

@@ -110,7 +110,10 @@ def classify_intent(query: str, catalog) -> IntentDecision:
                 and re.search(r"\b(?:tokoh|karakter|wayang)\b", clause)
                 and not re.search(r"\b(?:buat|buatkan|create|bangun)\b", clause)):
             inspected_clause = re.sub(r"\b(?:aplikasi|application)\b", "", clause)
-        if (not domain(clause) or re.search(
+        related_name_question = bool(accepted and re.fullmatch(
+            r"(?:(?:kalau|jika) (?:punya|ada) )?(?:siapa|siapakah) namanya",
+            normalize_query(clause)))
+        if (not (domain(clause) or related_name_question) or re.search(
             r"\b(?:website|aplikasi|application|kode|code|html|script|python|sql|shell|javascript|"
             r"source|presiden|bitcoin|program|pemrograman|coding|politik|pemilu|partai|"
             r"resep|masakan|cuaca|bola|saham|kripto|matematika|kalkulus|obat|diagnosis|"
