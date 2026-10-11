@@ -4,7 +4,7 @@ from PIL import Image, UnidentifiedImageError
 import re
 import streamlit as st
 
-from ui_client import BackendError, request_api, send_message
+from ui_client import BackendError, request_api, send_message, web_answer_markdown
 from ui_media import character_image
 
 load_dotenv()
@@ -96,16 +96,24 @@ def render(kind, data, key="response"):
         else:
             st.warning("Respons pengenalan gambar tidak valid. Silakan coba lagi.", icon=":material/info:")
     elif kind == "chat":
+        opening = data.get("opening")
+        if opening:
+            st.text(opening)
+        if len(data.get("subjects", [])) == 2:
+            st.caption("Tokoh: " + " dan ".join(subject["nama"] for subject in data["subjects"]))
         if data.get("character"):
             reference_image(data["character"])
-        st.text(data.get("answer", "Belum ada jawaban."))
+        answer = data.get("answer", "Belum ada jawaban.")
+        if opening and answer.startswith(opening + "\n\n"):
+            answer = answer[len(opening) + 2:]
+        if data.get("web_sources"):
+            st.markdown(web_answer_markdown(answer, data["web_sources"]))
+        else:
+            st.text(answer)
         if data.get("web_sources"):
             st.caption("Sumber internet")
             for number, source in enumerate(data["web_sources"], start=1):
                 st.link_button(f"[{number}] {source['title']}", source["url"])
-        if data.get("search_suggestions_html"):
-            # Only Google's search_entry_point metadata; never model answer HTML.
-            st.html(data["search_suggestions_html"])
         if data.get("mode") == "answer" and data.get("llm_status") in {
             "rate_limit", "unavailable", "timeout", "invalid_key", "model_unavailable", "internal", "invalid_response"
         }:
@@ -117,8 +125,8 @@ def render(kind, data, key="response"):
             st.text(data["follow_up"])
         if data.get("sources"):
             with st.expander("Sumber jawaban"):
-                for source in data["sources"]:
-                    st.text(f"{source.get('document', 'Basis pengetahuan')} · {source.get('label') or 'Katalog Wayang Sasak'}")
+                for number, source in enumerate(data["sources"], start=1):
+                    st.text((f"[{number}] " if data.get("narrative") else "") + f"{source.get('document', 'Basis pengetahuan')} · {source.get('label') or 'Katalog Wayang Sasak'}")
     elif kind == "search":
         if data.get("message"):
             st.text(data["message"])
@@ -130,6 +138,7 @@ st.session_state.setdefault("image_generation", 0)
 st.session_state.setdefault("text_generation", 0)
 st.session_state.setdefault("seen_ids", [])
 st.session_state.setdefault("awaiting_more", False)
+st.session_state.setdefault("conversation_context", None)
 
 with st.sidebar:
     st.subheader("Jelajahi Wayang Sasak")
@@ -146,6 +155,7 @@ with st.sidebar:
         except BackendError as exc:
             st.session_state.messages.append({"role": "assistant", "kind": "error", "data": str(exc)})
         st.session_state["awaiting_more"] = False
+        st.session_state["conversation_context"] = None
         st.rerun()
     st.caption("Riwayat hanya tersedia selama sesi ini.")
 
@@ -188,6 +198,15 @@ else:
 def remember_response(kind, data):
     if not isinstance(data, dict):
         return
+    if kind == "chat":
+        st.session_state.conversation_context = data.get("conversation_context")
+        for subject in data.get("subjects", []):
+            if subject["id"] not in st.session_state.seen_ids:
+                st.session_state.seen_ids.append(subject["id"])
+    elif kind == "image":
+        identity = data.get("prediksi") if data.get("status") == "accepted" else None
+        st.session_state.conversation_context = ({"subject_ids": [identity["id"]], "evidence_ids": [], "intent": "profile"}
+            if identity and isinstance(identity.get("id"), int) else None)
     character = data.get("character") if kind == "chat" else data.get("prediksi")
     if character and isinstance(character.get("id"), int):
         if character["id"] not in st.session_state.seen_ids:
@@ -204,10 +223,13 @@ def ask_question(question, character_id=None, explain_more=False):
                 kind, data = send_message(question, None, character_id=character_id, explain_more=True)
             elif character_id is not None:
                 kind, data = send_message(question, None, character_id=character_id)
-            elif st.session_state.awaiting_more:
-                kind, data = send_message(question, None, awaiting_more=True, seen_ids=st.session_state.seen_ids)
             else:
-                kind, data = send_message(question, None)
+                options = {}
+                if st.session_state.conversation_context is not None:
+                    options["conversation_context"] = st.session_state.conversation_context
+                if st.session_state.awaiting_more:
+                    options.update(awaiting_more=True, seen_ids=st.session_state.seen_ids)
+                kind, data = send_message(question, None, **options)
         except BackendError as exc:
             kind, data = "error", str(exc)
     remember_response(kind, data)
@@ -226,7 +248,25 @@ if "pending_question" in st.session_state:
                  st.session_state.pop("pending_explain_more", False))
     st.rerun()
 
-with st.container(border=True):
+st.html("""
+<style>
+.stMainBlockContainer { padding-bottom: 15rem; }
+.st-key-chat_composer {
+    position: fixed; bottom: 1rem; z-index: 50;
+    width: calc(100% - 4rem); max-width: 46rem;
+    background: var(--background-color, #0e1117);
+    border-radius: 1rem; box-shadow: 0 -8px 24px rgba(0,0,0,.12);
+}
+@media (min-width: 769px) {
+    [data-testid="stAppViewContainer"]:has([data-testid="stSidebar"][aria-expanded="true"])
+    .st-key-chat_composer { width: calc(100% - 25rem); }
+}
+@media (max-width: 768px) {
+    .st-key-chat_composer { left: 1rem; width: calc(100% - 2rem); bottom: .5rem; }
+}
+</style>
+""")
+with st.container(border=True, key="chat_composer"):
     attachment_col, message_col, send_col = st.columns([1.6, 6, 1.4], vertical_alignment="bottom")
     image_key = f"image_upload_{st.session_state.image_generation}"
     text_key = f"text_question_{st.session_state.text_generation}"

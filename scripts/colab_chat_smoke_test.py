@@ -1,4 +1,4 @@
-"""Smoke opt-in Gemini asli. Tidak menulis key/response sensitif ke file."""
+"""Smoke opt-in Provider asli. Tidak menulis key/response sensitif ke file."""
 from __future__ import annotations
 
 import json
@@ -13,28 +13,28 @@ from fastapi.testclient import TestClient
 from app.api import create_app
 from app.chat import rendered_evidence
 from app.chat_schemas import LLMStatus
-from app.gemini import load_gemini
+from app.provider import load_provider
 from typing import get_args
 from app.config import Settings
 from scripts.colab_search_smoke_test import fingerprints
 
 
 def _secret_from_colab():
-    if os.getenv("GEMINI_API_KEY", "").strip():
+    if os.getenv("LLM_API_KEY", "").strip():
         return
     try:
         from google.colab import userdata
-        key = userdata.get("GEMINI_API_KEY")
+        key = userdata.get("LLM_API_KEY")
         if key:
-            os.environ["GEMINI_API_KEY"] = key
+            os.environ["LLM_API_KEY"] = key
     except Exception:
         # Jangan expose error Secrets/provider yang bisa berisi nilai sensitif.
         pass
-    if not os.getenv("GEMINI_API_KEY", "").strip():
-        raise SystemExit("GEMINI_API_KEY belum tersedia di environment/Colab Secrets")
+    if not os.getenv("LLM_API_KEY", "").strip():
+        raise SystemExit("LLM_API_KEY belum tersedia di environment/Colab Secrets")
 
 
-class RecordingGemini:
+class RecordingProvider:
     """Keep only the current request context in memory for source validation."""
     def __init__(self, client):
         self.client = client
@@ -54,7 +54,7 @@ def safe_status(payload):
 
 
 def _assert_live(payload):
-    assert payload["llm_used"] is True, "Gemini fallback: " + safe_status(payload)
+    assert payload["llm_used"] is True, "Provider fallback: " + safe_status(payload)
     assert payload["mode"] == "answer", "Mode chat tidak cocok"
 
 
@@ -82,19 +82,19 @@ class SmokeFailure(RuntimeError):
 def main():
     _secret_from_colab()
     settings = Settings.from_env()
-    if settings.gemini_model != "gemini-3.6-flash":
+    if settings.llm_model != "gpt-4.1-mini":
         raise SmokeFailure("configuration_error: model_mismatch")
     if not settings.chat_enabled:
         raise SmokeFailure("configuration_error: chat_disabled")
     before = fingerprints(settings)
     recorded = []
     def loader(config):
-        client = load_gemini(config)
+        client = load_provider(config)
         assert client is not None, "not_configured"
-        wrapper = RecordingGemini(client)
+        wrapper = RecordingProvider(client)
         recorded.append(wrapper)
         return wrapper
-    app = create_app(settings, gemini_loader=loader)
+    app = create_app(settings, provider_loader=loader)
     queries = [
         ("Coba berikan saya contoh tokoh Wayang Saksak?", "catalog"),
         ("Jelaskan Jayangrana", "answer"),
@@ -108,7 +108,7 @@ def main():
             health = client.get("/health")
             health.raise_for_status()
             assert health.json()["retrieval_loaded"], "Retrieval asli belum siap; jalankan smoke search dahulu"
-            assert health.json()["gemini_client_ready"], "Client Gemini belum siap"
+            assert health.json()["provider_client_ready"], "Client Provider belum siap"
             for index, (query, expected_mode) in enumerate(queries):
                 recorded[0].evidence = []
                 response = client.post("/chat", json={"message": query})
@@ -126,15 +126,15 @@ def main():
                     assert [row["nama"] for row in payload["catalog"]] == expected_names
                 else:
                     _assert_sources(payload, recorded[0].evidence)
-                    assert payload["llm_used"], "Gemini fallback; validasi API asli belum lulus"
+                    assert payload["llm_used"], "Provider fallback; validasi API asli belum lulus"
                 llm_used += int(payload["llm_used"])
                 # Hanya status/count, bukan response/prompt/key/context.
                 print(json.dumps({"case": index + 1, "mode": payload["mode"],
                                   "llm_used": payload["llm_used"], "source_count": len(payload["sources"])}))
-        assert llm_used > 0, "Tidak ada request Gemini asli berhasil"
+        assert llm_used > 0, "Tidak ada request Provider asli berhasil"
     finally:
         assert fingerprints(settings) == before, "Artefak sumber berubah selama smoke test"
-    print("LULUS - smoke Gemini asli dengan sources tervalidasi; JSON/Chroma sumber tidak berubah")
+    print("LULUS - smoke Provider asli dengan sources tervalidasi; JSON/Chroma sumber tidak berubah")
 
 
 if __name__ == "__main__":

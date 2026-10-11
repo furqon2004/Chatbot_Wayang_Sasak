@@ -7,6 +7,21 @@ import ipaddress
 from .schemas import CatalogItem, SearchRequest
 
 
+class ConversationContext(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    subject_ids: list[Annotated[int, Field(ge=0, le=19, strict=True)]] = Field(default_factory=list, max_length=2)
+    evidence_ids: list[Annotated[str, Field(strict=True, max_length=100,
+        pattern=r"^profile:\d{1,2}:(deskripsi|deskripsi_lengkap|filosofi|ciri_ciri|kata_kunci):\d{1,4}$")]] = Field(default_factory=list, max_length=12)
+    intent: Literal["profile", "philosophy", "traits", "comparison", "simplify"] = "profile"
+    domain: Literal["wayang_sasak"] | None = None
+
+    @model_validator(mode="after")
+    def unique_ids(self):
+        if len(set(self.subject_ids)) != len(self.subject_ids) or len(set(self.evidence_ids)) != len(self.evidence_ids):
+            raise ValueError("Konteks duplikat")
+        return self
+
+
 class ChatRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     message: str = Field(min_length=1, max_length=1000, strict=True)
@@ -14,6 +29,7 @@ class ChatRequest(BaseModel):
     explain_more: bool = False
     character_id: Annotated[int, Field(ge=0, le=19, strict=True)] | None = None
     seen_ids: list[Annotated[int, Field(ge=0, le=19, strict=True)]] = Field(default_factory=list, max_length=20)
+    conversation_context: ConversationContext | None = None
 
     @model_validator(mode="after")
     def explanation_identity(self):
@@ -37,6 +53,21 @@ class EvidenceSelection(BaseModel):
         "Mau berkenalan dengan tokoh Wayang Sasak lainnya?",
         "Ingin menjelajahi tokoh Wayang Sasak yang lain?",
     ] = "Apakah Anda ingin tahu tokoh Wayang Sasak yang lain?"
+
+
+class NarrativeSection(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    text: str = Field(min_length=1, max_length=1000, strict=True)
+    kind: Literal["explanation", "comparison"]
+    subject_ids: list[Annotated[int, Field(ge=0, le=19, strict=True)]] = Field(min_length=1, max_length=2)
+    evidence_ids: list[Annotated[str, Field(strict=True, max_length=100,
+        pattern=r"^profile:\d{1,2}:(deskripsi|deskripsi_lengkap|filosofi|ciri_ciri|kata_kunci):\d{1,4}$")]] = Field(min_length=1, max_length=6)
+
+
+class EvidenceNarrative(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    status: Literal["supported", "insufficient_evidence"]
+    sections: list[NarrativeSection] = Field(max_length=6)
 
 
 class PromptEvidence(BaseModel):
@@ -101,6 +132,7 @@ class ChatResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
     mode: Literal["answer", "catalog", "fallback_catalog", "suggestions", "conversation", "web_answer"]
     answer: str = Field(max_length=8000)
+    opening: str | None = Field(default=None, max_length=400)
     sources: list[ChatSource]
     catalog: list[CatalogItem] | None = Field(default=None, min_length=20, max_length=20)
     suggestions: list[str] = Field(default_factory=list)
@@ -108,6 +140,11 @@ class ChatResponse(BaseModel):
     llm_status: LLMStatus = "not_needed"
     scope_notice: str | None = Field(default=None, max_length=250)
     character: CatalogItem | None = None
+    subjects: list[CatalogItem] = Field(default_factory=list, max_length=2)
+    conversation_context: ConversationContext | None = None
+    narrative: bool = False
+    cache_hit: bool = False
+    provider_requests: int = Field(default=0, ge=0)
     choices: list[CatalogItem] = Field(default_factory=list, max_length=3)
     follow_up: str | None = Field(default=None, max_length=180)
     web_sources: list[WebSource] = Field(default_factory=list, max_length=20)

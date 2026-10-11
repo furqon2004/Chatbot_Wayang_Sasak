@@ -2,6 +2,25 @@
 import os
 
 import httpx
+import re
+from urllib.parse import quote, urlsplit
+
+
+def web_answer_markdown(answer, sources):
+    """Render only numbered backend citations as links; escape model markdown."""
+    def escape(value):
+        return re.sub(r"([\\`*_{}\[\]()<>#!|])", r"\\\1", value)
+    pieces = []
+    for part in re.split(r"(\[\d+\])", answer):
+        match = re.fullmatch(r"\[(\d+)\]", part)
+        if match and 1 <= int(match[1]) <= len(sources):
+            url = sources[int(match[1]) - 1]["url"]
+            parsed = urlsplit(url)
+            if parsed.scheme == "https" and parsed.hostname and not parsed.username and not parsed.password:
+                pieces.append(f"[{escape(part)}]({quote(url, safe=':/?=&%#')})")
+                continue
+        pieces.append(escape(part))
+    return "".join(pieces)
 
 
 class BackendError(Exception):
@@ -51,7 +70,7 @@ def request_api(path, *, payload=None, image=None):
         raise BackendError("Format respons backend tidak valid. Silakan coba lagi.") from None
 
 
-def send_message(text, uploaded=None, *, awaiting_more=False, seen_ids=(), character_id=None, explain_more=False):
+def send_message(text, uploaded=None, *, awaiting_more=False, seen_ids=(), character_id=None, explain_more=False, conversation_context=None):
     if uploaded is not None:
         if not uploaded.size or uploaded.size > 10 * 1024 * 1024:
             raise BackendError("Gunakan gambar tidak kosong dengan ukuran maksimal 10 MB.")
@@ -63,6 +82,8 @@ def send_message(text, uploaded=None, *, awaiting_more=False, seen_ids=(), chara
     if not text.strip() or not any(c.isalnum() for c in text):
         raise BackendError("Tulis pertanyaan atau lampirkan gambar terlebih dahulu.")
     payload = {"message": text.strip()}
+    if conversation_context is not None:
+        payload["conversation_context"] = conversation_context
     if character_id is not None:
         payload["character_id"] = character_id
     if explain_more:

@@ -1,3 +1,7 @@
+> Catatan migrasi OpenAI: uraian provider/konfigurasi lama di bawah merupakan
+> catatan historis. Implementasi aktif memakai OpenAI untuk narasi dan web;
+> lihat [konfigurasi chat](chat.md). Hasil audit lama bukan validasi migrasi terbaru.
+
 # Catatan validasi milestone
 
 **Pembaruan 25 September 2026:** pengguna melaporkan smoke retrieval asli

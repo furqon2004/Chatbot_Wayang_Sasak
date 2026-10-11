@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from .public import display_name, public_image, public_profile
-from .query_normalizer import terms
+from .query_normalizer import terms, normalize_query
 from .schemas import CatalogItem, CatalogSearch
 
 
@@ -42,6 +42,8 @@ class Catalog:
             for index, text in enumerate(value if isinstance(value, list) else [value]):
                 if isinstance(text, str) and text.strip():
                     priority = 2 if key in query else 0
+                    if key == "ciri_ciri" and {"ciri", "cirinya"} & set(normalize_query(query).split()):
+                        priority = 2
                     rows.append((priority + len(wanted & terms(text)), f"profile:{class_id}:{key}:{index}", text[:500]))
         rows.sort(key=lambda row: -row[0])
         chosen = rows[:3]

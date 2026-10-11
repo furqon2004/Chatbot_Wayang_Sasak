@@ -6,11 +6,11 @@ startup. Prediksi gambar memiliki [decision guard dan kontrak uncertain](docs/vi
 dengan threshold confidence 0.85 dan margin 0.20; profil hanya diberikan saat accepted.
 Kontrak `GET /health` dipertahankan;
 Tahap 2 menambahkan `POST /search`. Persiapan Tahap 3 (`POST /chat`) sudah
-tersedia dengan fallback deterministik; aktivasi/validasi Gemini ditunda atas
-permintaan pengguna sampai API key siap. Tahap 3 belum dinyatakan selesai.
+tersedia dengan narasi OpenAI, pencarian web OpenAI, dan fallback lokal.
+Lihat konfigurasi aktif pada dokumentasi chat.
 
 Dokumentasi tambahan: [retrieval dan kalibrasi](docs/retrieval.md),
-[chat, grounding, dan Gemini](docs/chat.md),
+[chat, grounding, dan OpenAI](docs/chat.md),
 [laporan milestone](docs/milestones.md).
 
 ## Struktur
@@ -46,7 +46,7 @@ Keduanya tidak disimpan di Git. `.env.example` menyediakan template tanpa rahasi
 File `.env` dibaca melalui opsi Uvicorn `--env-file`, bukan otomatis oleh
 `Settings.from_env()`. Environment sistem yang sudah disetel tetap diprioritaskan.
 Prediksi gambar dan search tidak membutuhkan API key. Chat memakai
-`GEMINI_API_KEY` jika tersedia, atau fallback deterministik jika kosong.
+`LLM_API_KEY` jika tersedia, atau fallback deterministik jika kosong.
 
 Model dan database tidak ikut clone. Tanpa artefak asli, startup akan gagal
 dengan pesan artefak yang hilang; menyalin `.env` saja tidak menyediakan model.
@@ -216,7 +216,7 @@ $env:WAYANG_ENABLE_CHAT = "true"
 UI membaca `.env` tanpa menimpa environment sistem. `WAYANG_API_URL` default
 `http://127.0.0.1:8000`; sesuaikan jika backend berada di host lain.
 `WAYANG_SERVICE_TOKEN` dikirim hanya dari server UI ke backend jika dikonfigurasi.
-UI tidak membutuhkan akses model atau kunci Gemini.
+UI tidak membutuhkan akses model atau kunci OpenAI.
 
 Header memeriksa `/health` setiap 30 detik. Input teks dan lampiran berada dalam
 satu area dengan tombol Kirim. Teks yang terisi mengunci unggahan; gambar yang
@@ -269,29 +269,11 @@ Konteks ini hanya berlaku dalam sesi UI dan dihapus oleh Percakapan Baru.
 
 ### Sejarah, cerita, dan jumlah tokoh dari internet
 
-Pertanyaan umum seperti sejarah, asal-usul, lakon, jalan cerita, dan jumlah tokoh
-menggunakan Gemini dengan Google Search. Respons hanya diterima jika provider
-mengembalikan hasil pencarian dan metadata kutipan yang dapat dipetakan ke teks.
-UI menampilkan penanda sumber, tombol tautan, dan Search Suggestions dari provider.
-Dokumentasi integrasi: https://ai.google.dev/gemini-api/docs/generate-content/google-search
+Pertanyaan Wayang Sasak tentang sejarah, cerita, atau jumlah tokoh dapat memakai
+OpenAI Responses dengan tool `web_search`, melalui `LLM_API_KEY` yang sama.
+Backend memeriksa hasil pencarian dan anotasi URL; UI menampilkan sitasi yang
+bisa diklik dan daftar sumber. Lihat [konfigurasi chat](docs/chat.md).
 
-Jika Google Search terkena kuota atau gangguan, aplikasi membaca daftar sumber
-budaya publik yang ditentukan di `app/web_sources.py`, kemudian meminta Gemini
-merangkumnya dengan ID sumber tervalidasi. Jalur ini membaca halaman daring saat
-permintaan berlangsung; cakupannya terbatas pada sumber tersebut, bukan pencarian
-web bebas. URL dari pengguna atau dari teks model tidak diunduh. Batas unduhan,
-waktu tunggu, dan pengalihan URL dikendalikan aplikasi. Sumber yang tidak tersedia
-dilewati; bila bukti atau Gemini tidak tersedia, aplikasi menyampaikan keterbatasan.
-Kutipan menunjukkan asal informasi, bukan jaminan kebenaran independen; versi dan
-ketidakpastian budaya harus tetap dijelaskan.
-
-`GEMINI_SEARCH_TIMEOUT_SECONDS` (default 45, maksimum 60) mengatur timeout panggilan
-model untuk jawaban internet; total permintaan web dibatasi 60 detik. Circuit breaker
-Google Search dipisahkan dari chat biasa agar kuota pencarian tidak menonaktifkan
-penjelasan tokoh. Batas kuota API key tetap berlaku; aplikasi tidak dapat menambahnya.
-
-Angka 20 selalu dijelaskan sebagai cakupan profil dan pengenalan gambar aplikasi.
-Jumlah tokoh tradisional, jumlah boneka dalam perangkat, dan jumlah tokoh dalam
-lakon tidak disamakan. Jika sumber tidak mendukung angka universal, jawaban harus
-mengatakan bahwa jumlah pastinya belum terverifikasi. Profil 20 tokoh dan gambar
-utamanya tetap berasal dari JSON lokal, tanpa ditimpa hasil web.
+Angka 20 merupakan cakupan katalog aplikasi, bukan jumlah seluruh tokoh tradisional.
+Jika sumber tidak mendukung angka pasti, aplikasi menyampaikan keterbatasan.
+Kutipan bukan verifikasi kebenaran budaya independen. Profil lokal tidak ditimpa web.

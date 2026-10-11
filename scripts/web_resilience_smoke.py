@@ -1,4 +1,4 @@
-"""Opt-in smoke of working-tree code. Only --live contacts Gemini.
+"""Opt-in smoke of working-tree code. Only --live contacts Provider.
 
 Configuration is process-local; source artifacts and .env remain untouched.
 """
@@ -19,8 +19,8 @@ from unittest.mock import AsyncMock
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 OVERRIDES = {
-    "GEMINI_TIMEOUT_SECONDS": "45", "GEMINI_SEARCH_TIMEOUT_SECONDS": "90",
-    "GEMINI_MAX_ATTEMPTS": "2", "GEMINI_WEB_MAX_ATTEMPTS": "2",
+    "LLM_TIMEOUT_SECONDS": "45", "WEB_TIMEOUT_SECONDS": "90",
+    "LLM_MAX_ATTEMPTS": "2", "WEB_MAX_ATTEMPTS": "2",
     "WAYANG_MAX_CONCURRENCY": "1", "WAYANG_WEB_CACHE_TTL_SECONDS": "900",
     "WAYANG_WEB_CACHE_MAX_ENTRIES": "32", "WAYANG_ENABLE_CHAT": "true",
 }
@@ -31,20 +31,20 @@ def report(flow, status, **details):
 
 
 async def live(settings):
-    from app.gemini import GeminiClient, GeminiFailure
-    if not settings.gemini_api_key:
+    from app.provider import ProviderClient, ProviderFailure
+    if not settings.llm_api_key:
         report("live", "BLOCKED", reason="not_configured", provider_calls=0)
         return
-    client = GeminiClient(settings)
+    client = ProviderClient(settings)
     calls = 0
-    generate = client.client.aio.models.generate_content
+    generate = client.client.responses.create
 
     async def counted(**kwargs):
         nonlocal calls
         calls += 1
         return await generate(**kwargs)
 
-    client.client.aio.models.generate_content = counted
+    client.client.responses.create = counted
     query = "Apa itu Wayang Sasak?"
     try:
         answer = await client.search(query)
@@ -53,7 +53,7 @@ async def live(settings):
         assert cached == answer and calls == initial
         report("live", "PASS", provider_calls=calls, cache_hit=True,
                additional_calls=0, https_sources=len(answer[1]))
-    except GeminiFailure as exc:
+    except ProviderFailure as exc:
         report("live", "BLOCKED", category=exc.category, provider_calls=calls,
                breaker_open=not client.search_breaker.available(), repeated=False)
     finally:
@@ -66,19 +66,19 @@ def local(settings):
     from PIL import Image
     from streamlit.testing.v1 import AppTest
     from app.api import create_app
-    from app.gemini import GeminiClient, GeminiFailure
+    from app.provider import ProviderClient, ProviderFailure
     from scripts.colab_search_smoke_test import fingerprints
     from ui_media import character_image
 
-    class QuotaError(Exception):
-        code = 429
-
-    generate = AsyncMock(side_effect=QuotaError("private mock response"))
-    fake = GeminiClient(settings, client=NS(aio=NS(models=NS(generate_content=generate))))
-    fake.select = AsyncMock(side_effect=GeminiFailure("unavailable"))
+    from openai import RateLimitError
+    error = RateLimitError("private mock response", response=httpx.Response(429,
+        request=httpx.Request("POST", "https://api.openai.com/v1/responses")), body=None)
+    generate = AsyncMock(side_effect=error)
+    fake = ProviderClient(settings, client=NS(responses=NS(create=generate)))
+    fake.select = AsyncMock(side_effect=ProviderFailure("unavailable"))
     fake.close = AsyncMock()
     before = fingerprints(settings)
-    app = create_app(settings, gemini_loader=lambda _: fake)
+    app = create_app(settings, provider_loader=lambda _: fake)
     server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=18080,
                                          log_level="critical", access_log=False))
     thread = threading.Thread(target=server.run, daemon=True)
@@ -137,7 +137,7 @@ def local(settings):
             assert fallback["mode"] == "fallback_catalog" and len(fallback["catalog"]) == 20
             assert all(any(b.label == c["nama"] for b in at.button) for c in fallback["catalog"])
             rendered = " ".join(w.value for group in (at.text, at.caption) for w in group)
-            assert "Gemini" not in rendered and "private mock response" not in rendered
+            assert "Provider" not in rendered and "private mock response" not in rendered
             assert "Basis pengetahuan Wayang AI memuat 20 tokoh" in rendered
             send("Apa itu Wayang Sasak?")
             assert generate.await_count == 1 and not fake.search_breaker.available()
@@ -198,9 +198,9 @@ def main():
     logging.disable(logging.CRITICAL)
     from app.config import Settings
     settings = Settings.from_env()
-    effective = dict(zip(OVERRIDES, [settings.gemini_timeout_seconds,
-        settings.gemini_search_timeout_seconds, settings.gemini_max_attempts,
-        settings.gemini_web_max_attempts, settings.security.concurrency,
+    effective = dict(zip(OVERRIDES, [settings.llm_timeout_seconds,
+        settings.web_timeout_seconds, settings.llm_max_attempts,
+        settings.web_max_attempts, settings.security.concurrency,
         settings.wayang_web_cache_ttl_seconds, settings.wayang_web_cache_max_entries,
         settings.chat_enabled]))
     assert list(effective.values()) == [45, 90, 2, 2, 1, 900, 32, True]

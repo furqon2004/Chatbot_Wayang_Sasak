@@ -30,7 +30,7 @@ PATTERNS = {
     "google_key": re.compile(r"AIza[\w-]{35}"),
     "service_key": re.compile(r"sk-[\w-]{20,}|gh[pousr]_[\w]{20,}|AKIA[A-Z0-9]{16}"),
     "private_key": re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"),
-    "credential_assignment": re.compile(r'''(?im)^[ \t]*(?:GEMINI_API_KEY|WAYANG_SERVICE_TOKEN)[ \t]*=[ \t]*["']?[^\s"'#][^\r\n]*'''),
+    "credential_assignment": re.compile(r'''(?im)^[ \t]*(?:LLM_API_KEY|LLM_API_KEY|WAYANG_SERVICE_TOKEN)[ \t]*=[ \t]*["']?[^\s"'#][^\r\n]*'''),
 }
 
 # Version-specific acceptance; rationale/conditions in security-hardening.md#dependency-vex.

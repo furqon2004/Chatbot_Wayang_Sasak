@@ -33,13 +33,6 @@ def _bool_env(name: str, default: bool) -> bool:
     return value == "true"
 
 
-def _timeout_env() -> float:
-    try:
-        return float(os.getenv("GEMINI_TIMEOUT_SECONDS", "15"))
-    except ValueError as exc:
-        raise ValueError("GEMINI_TIMEOUT_SECONDS harus berupa angka") from exc
-
-
 def _positive_int_env(name: str, default: int) -> int:
     try:
         value = int(os.getenv(name, str(default)))
@@ -107,14 +100,15 @@ class Settings:
     collection_name: str = "wayang_sasak"
     search_threshold: float = DEFAULT_SEARCH_THRESHOLD
     normalize_embeddings: bool = False
-    gemini_api_key: str = field(default="", repr=False, compare=False)
-    gemini_model: str = "gemini-3.6-flash"
-    gemini_timeout_seconds: float = 15.0
-    gemini_search_timeout_seconds: float = 45.0
-    gemini_web_max_attempts: int = 2
+    llm_provider: str = "openai"
+    llm_model: str = "gpt-4.1-mini"
+    llm_api_key: str = field(default="", repr=False, compare=False)
+    llm_timeout_seconds: float = 45.0
+    llm_max_attempts: int = 2
+    web_timeout_seconds: float = 45.0
+    web_max_attempts: int = 2
     wayang_web_cache_ttl_seconds: int = 900
     wayang_web_cache_max_entries: int = 32
-    gemini_max_attempts: int = 2
     chat_enabled: bool = False
     security: SecuritySettings = field(default_factory=SecuritySettings)
     embedding_local_only: bool = False
@@ -131,18 +125,20 @@ class Settings:
             raise ValueError("Nama collection tidak valid")
         if not math.isfinite(self.search_threshold) or not 0 <= self.search_threshold <= 1:
             raise ValueError("Threshold harus dalam rentang 0-1")
-        if not re.fullmatch(r"gemini-[a-zA-Z0-9._-]+", self.gemini_model):
-            raise ValueError("GEMINI_MODEL tidak valid")
-        if not math.isfinite(self.gemini_timeout_seconds) or not 0 < self.gemini_timeout_seconds <= 60:
-            raise ValueError("GEMINI_TIMEOUT_SECONDS harus > 0 dan <= 60")
-        if not math.isfinite(self.gemini_search_timeout_seconds) or not 0 < self.gemini_search_timeout_seconds <= 90:
-            raise ValueError("GEMINI_SEARCH_TIMEOUT_SECONDS harus > 0 dan <= 90")
-        if not 1 <= self.gemini_web_max_attempts <= 2:
-            raise ValueError("GEMINI_WEB_MAX_ATTEMPTS harus 1-2")
+        if self.llm_provider != "openai":
+            raise ValueError("LLM_PROVIDER harus openai")
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,99}", self.llm_model):
+            raise ValueError("LLM_MODEL tidak valid")
+        if not math.isfinite(self.llm_timeout_seconds) or not 0 < self.llm_timeout_seconds <= 60:
+            raise ValueError("LLM_TIMEOUT_SECONDS harus > 0 dan <= 60")
+        if not 1 <= self.llm_max_attempts <= 2:
+            raise ValueError("LLM_MAX_ATTEMPTS harus 1-2")
+        if not math.isfinite(self.web_timeout_seconds) or not 0 < self.web_timeout_seconds <= 90:
+            raise ValueError("WEB_TIMEOUT_SECONDS harus > 0 dan <= 90")
+        if not 1 <= self.web_max_attempts <= 2:
+            raise ValueError("WEB_MAX_ATTEMPTS harus 1-2")
         if not 1 <= self.wayang_web_cache_max_entries <= 32 or self.wayang_web_cache_ttl_seconds <= 0:
             raise ValueError("Batas cache web tidak valid")
-        if not 1 <= self.gemini_max_attempts <= 3:
-            raise ValueError("GEMINI_MAX_ATTEMPTS harus 1-3")
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -169,14 +165,15 @@ class Settings:
             embedding_local_only=_bool_env("WAYANG_EMBEDDING_LOCAL_ONLY", False),
             embedding_revision=os.getenv("WAYANG_EMBEDDING_REVISION", "").strip() or None,
             # Read server environment only when explicitly enabling Stage 3.
-            gemini_api_key=os.getenv("GEMINI_API_KEY", "").strip() if chat_enabled else "",
+            llm_provider=os.getenv("LLM_PROVIDER", "openai").strip().lower(),
+            llm_model=os.getenv("LLM_MODEL", "gpt-4.1-mini").strip(),
+            llm_api_key=os.getenv("LLM_API_KEY", "").strip() if chat_enabled else "",
+            llm_timeout_seconds=float(os.getenv("LLM_TIMEOUT_SECONDS", "45")),
+            llm_max_attempts=_positive_int_env("LLM_MAX_ATTEMPTS", 2),
             chat_enabled=chat_enabled,
             security=SecuritySettings.from_env(),
-            gemini_model=os.getenv("GEMINI_MODEL", "gemini-3.6-flash"),
-            gemini_timeout_seconds=_timeout_env(),
-            gemini_search_timeout_seconds=float(os.getenv("GEMINI_SEARCH_TIMEOUT_SECONDS", "45")),
-            gemini_web_max_attempts=_positive_int_env("GEMINI_WEB_MAX_ATTEMPTS", 2),
+            web_timeout_seconds=float(os.getenv("WEB_TIMEOUT_SECONDS", "45")),
+            web_max_attempts=_positive_int_env("WEB_MAX_ATTEMPTS", 2),
             wayang_web_cache_ttl_seconds=_positive_int_env("WAYANG_WEB_CACHE_TTL_SECONDS", 900),
             wayang_web_cache_max_entries=_positive_int_env("WAYANG_WEB_CACHE_MAX_ENTRIES", 32),
-            gemini_max_attempts=_positive_int_env("GEMINI_MAX_ATTEMPTS", 2),
         )

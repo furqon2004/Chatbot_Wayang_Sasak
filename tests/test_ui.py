@@ -459,7 +459,6 @@ def test_web_answer_shows_citations_without_unrelated_character_image():
     at.session_state["messages"] = [{"role": "assistant", "kind": "chat", "data": {
         "mode": "web_answer", "answer": "Ringkasan sejarah [1]", "sources": [],
         "web_sources": [{"title": "Museum", "url": "https://example.org/museum"}],
-        "search_suggestions_html": "<div>Google Search</div>",
         "scope_notice": "Aplikasi memuat 20 tokoh, bukan jumlah universal.",
         "follow_up": "Ingin mengenal tokoh lainnya?"}}]
     with patch("ui_client.request_api", return_value={"status": "ok"}):
@@ -467,7 +466,7 @@ def test_web_answer_shows_citations_without_unrelated_character_image():
     assert not at.exception and not at.get("image")
     assert len(at.get("link_button")) == 1
     assert at.get("link_button")[0].proto.url == "https://example.org/museum"
-    assert any(t.value == "Ringkasan sejarah [1]" for t in at.text)
+    assert any("https://example.org/museum" in t.value and "Ringkasan sejarah" in t.value for t in at.markdown)
 
 
 def test_web_failure_renders_catalog_without_provider_details():
@@ -475,10 +474,10 @@ def test_web_failure_renders_catalog_without_provider_details():
     from types import SimpleNamespace
     from unittest.mock import AsyncMock
     from app.chat import ChatService
-    from app.gemini import GeminiFailure
+    from app.provider import ProviderFailure
     from evaluation.mock_search import mock_service
     reply = asyncio.run(ChatService(mock_service(), SimpleNamespace(
-        search=AsyncMock(side_effect=GeminiFailure("rate_limit")))).chat("Sejarah Wayang Sasak"))
+        search=AsyncMock(side_effect=ProviderFailure("rate_limit")))).chat("Sejarah Wayang Sasak"))
     at = app_test()
     at.session_state["messages"] = [{"role": "assistant", "kind": "chat", "data": reply.model_dump()}]
     with patch("ui_client.request_api", return_value={"status": "ok"}):
@@ -486,6 +485,6 @@ def test_web_failure_renders_catalog_without_provider_details():
     assert not at.exception
     rendered = "\n".join(item.value for kind in (at.text, at.markdown, at.caption) for item in kind)
     assert "Informasi internet belum dapat diverifikasi" in rendered
-    assert "Gemini" not in rendered and "kuota" not in rendered.casefold()
+    assert "Provider" not in rendered and "kuota" not in rendered.casefold()
     for item in reply.catalog:
         assert any(item.nama in button.label for button in at.button)

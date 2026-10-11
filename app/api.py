@@ -72,15 +72,15 @@ def create_app(
     settings: Settings | None = None,
     resource_loader: Callable[[Settings], ModelResources] = load_resources,
     retrieval_loader=load_retrieval,
-    gemini_loader=None,
+    provider_loader=None,
     rate_limiter=None,
     capacity=None,
 ) -> FastAPI:
     active_settings = settings or Settings.from_env()
-    active_gemini_loader = gemini_loader
-    if active_gemini_loader is None and active_settings.chat_enabled:
-        from .gemini import load_gemini
-        active_gemini_loader = load_gemini
+    active_provider_loader = provider_loader
+    if active_provider_loader is None and active_settings.chat_enabled:
+        from .llm import load_llm
+        active_provider_loader = load_llm
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -101,16 +101,16 @@ def create_app(
             LOGGER.warning("Retrieval unavailable saat startup")
         semantic = retrieval_resources.semantic if retrieval_resources else None
         app.state.retrieval = RetrievalService(catalog, semantic, active_settings.search_threshold)
-        gemini = None
+        provider = None
         try:
-            if active_gemini_loader is not None:
-                gemini = active_gemini_loader(active_settings)
+            if active_provider_loader is not None:
+                provider = active_provider_loader(active_settings)
         except Exception:
-            LOGGER.warning("Gemini unavailable saat startup")
-        if active_gemini_loader is not None:
+            LOGGER.warning("Provider unavailable saat startup")
+        if active_provider_loader is not None:
             from .chat import ChatService
-            app.state.chat = ChatService(app.state.retrieval, gemini, active_settings.gemini_timeout_seconds,
-                                         active_settings.gemini_search_timeout_seconds)
+            app.state.chat = ChatService(app.state.retrieval, provider, active_settings.llm_timeout_seconds,
+                                         active_settings.web_timeout_seconds)
         app.state.ready = True
         try:
             yield
@@ -120,8 +120,8 @@ def create_app(
             app.state.retrieval = None
             app.state.chat = None
             try:
-                if gemini is not None:
-                    await gemini.close()
+                if provider is not None:
+                    await provider.close()
             finally:
                 if retrieval_resources is not None:
                     await run_in_threadpool(retrieval_resources.close)
@@ -152,7 +152,7 @@ def create_app(
     app.state.chat = None
     app.include_router(search_router)
     # Modul Tahap 3 lama dipertahankan, tetapi aplikasi default hanya Tahap 1–2.
-    if active_gemini_loader is not None:
+    if active_provider_loader is not None:
         from .chat_routes import router as chat_router
         app.include_router(chat_router)
 
@@ -174,8 +174,8 @@ def create_app(
             "retrieval_loaded": semantic is not None,
             "collection_name": active_settings.collection_name if semantic is not None else None,
             "document_count": semantic.document_count if semantic is not None else 0,
-            "gemini_configured": bool(active_settings.gemini_api_key),
-            "gemini_client_ready": request.app.state.chat.gemini is not None if request.app.state.chat else False,
+            "provider_configured": bool(active_settings.llm_api_key),
+            "provider_client_ready": getattr(request.app.state.chat.provider, "web_client", request.app.state.chat.provider) is not None if request.app.state.chat else False,
         }
 
     prediction_router = APIRouter(route_class=MemoryUploadRoute)

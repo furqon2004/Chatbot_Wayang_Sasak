@@ -36,8 +36,8 @@ def test_health_and_resources_are_loaded_only_once(settings, fake_resources):
         "retrieval_loaded": False,
         "collection_name": None,
         "document_count": 0,
-        "gemini_configured": False,
-        "gemini_client_ready": False,
+        "provider_configured": False,
+        "provider_client_ready": False,
     }
 
 

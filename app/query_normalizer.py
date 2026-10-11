@@ -64,9 +64,14 @@ def unsafe_evidence(value: str) -> bool:
     return bool(unsupported_instruction(normalized) or re.search(
         r"<[^>]+>|```|https?://|javascript:|data:|\\u[0-9a-f]{4}|"
         r"\b(?:base64|rot13|jailbreak|terminal|powershell|credential|credentials|password)\b|"
-        r"\b(?:api[ _-]?key|gemini_api_key|system prompt|system instruction|prompt sistem)\b|"
+        r"\b(?:api[ _-]?key|llm_api_key|system prompt|system instruction|prompt sistem)\b|"
         r"\b(?:system|developer|assistant)\s*:|"
         r"\b(?:abaikan|ignore|override|bypass|pretend|berpura|roleplay|role[- ]play)\b|"
+        r"\b(?:ganti|ubah|change|switch)\b.*\b(?:peran|role|aturan|instruksi)\b|"
+        r"\b(?:bocorkan|ungkapkan|reveal|leak|cetak|tampilkan)\b.*\b(?:prompt|rahasia|secret|token|kunci|instruksi)\b|"
+        r"\b(?:mulai sekarang|from now on|you are now|anda sekarang)\b|"
+        r"\b(?:ikuti|patuhi|follow|obey)\b.*\b(?:instruksi|perintah|instructions|commands)\b|"
+        r"\b(?:jawab|bahas|answer|discuss)\b.*\b(?:topik lain|luar domain|another topic)\b|"
         r"\b(?:hapus|delete|drop|ubah|read|baca|write|tulis|execute|jalankan)\b.*"
         r"\b(?:file|database|chromadb|env|source|code|kode|model|dataset|perintah)\b|"
         r"AIza[\w-]{35}|sk-[\w-]{20,}|gh[pousr]_[\w]{20,}|"
@@ -81,8 +86,9 @@ def classify_intent(query: str, catalog) -> IntentDecision:
     names += [normalize_query(item.label) for item in catalog.items]
     def domain(part):
         value = normalize_query(part)
-        return bool(re.search(r"\b(?:wayang|tokoh|karakter|filosofi|ciri|jayagrana|gununggan)\b", value)
-                    or general_knowledge_intent(value)
+        return bool(re.search(r"\b(?:wayang sasak|pewayangan sasak|serat menak|cerita menak|jayagrana|gununggan)\b", value)
+                    or re.fullmatch(r"(?:berapa|jumlah|berapa jumlah|total) (?:tokoh|karakter)(?: di| dalam)? (?:sistem|aplikasi|katalog|database)", value)
+                    or catalog_intent(value)
                     or any(re.search(r"\b" + re.escape(name) + r"\b", value) for name in names))
     relevant = domain(query)
     if unsafe_evidence(query):
@@ -106,7 +112,11 @@ def classify_intent(query: str, catalog) -> IntentDecision:
             inspected_clause = re.sub(r"\b(?:aplikasi|application)\b", "", clause)
         if (not domain(clause) or re.search(
             r"\b(?:website|aplikasi|application|kode|code|html|script|python|sql|shell|javascript|"
-            r"source|presiden|bitcoin|program)\b", inspected_clause)):
+            r"source|presiden|bitcoin|program|pemrograman|coding|politik|pemilu|partai|"
+            r"resep|masakan|cuaca|bola|saham|kripto|matematika|kalkulus|obat|diagnosis|"
+            r"covid|excel|email|surat|algoritma|komputer|game|puisi|pantun|"
+            r"hitung|calculate|solve|terjemahkan|translate|investasi|kampanye|election|"
+            r"recipe|weather|football|elections|president|programming)\b", inspected_clause)):
             rejected.append(clause)
         else:
             accepted.append(clause)
@@ -131,3 +141,18 @@ def general_knowledge_intent(query: str) -> bool:
         value,
     ))
     return cultural and (topics or overview)
+
+
+def local_overview_intent(query: str) -> str | None:
+    """Only bounded overview requests; internet and richer history stay grounded."""
+    value = normalize_query(query)
+    if re.fullmatch(
+        r"(?:tolong |coba )?(?:apa itu|apa yang dimaksud dengan|jelaskan|penjelasan|"
+        r"ceritakan|ceritain|berikan saya informasi|saya ingin mengenal|explain)"
+        r"(?: dong| saya| aku| kepada saya| kepada aku)?(?: tentang| mengenai)?"
+        r" wayang sasak(?: ya| dong)?", value,
+    ):
+        return "overview"
+    if re.fullmatch(r"(?:apa hubungan|apa kaitan|jelaskan hubungan) wayang sasak dengan (?:cerita |serat )?menak", value):
+        return "menak"
+    return None

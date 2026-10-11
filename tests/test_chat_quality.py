@@ -83,7 +83,7 @@ def test_maximum_context_stays_within_answer_limit():
 
 def test_chat_fallback_deduplicates_real_shape_and_preserves_provenance():
     retrieval = mock_service()
-    result = retrieval.search("Siapa tokoh utama Wayang Sasak?")
+    result = retrieval.search("Jelaskan Jayangrana")
     hit = result.results[0]
     text = "Tokoh utama dalam cerita sintetis."
     for field in ("deskripsi", "deskripsi_lengkap"):
@@ -92,7 +92,7 @@ def test_chat_fallback_deduplicates_real_shape_and_preserves_provenance():
     hit.evidence_ids = [f"profile:{hit.id}:{field}:0" for field in ("deskripsi", "deskripsi_lengkap")]
     result.results = [hit]
     retrieval.search = lambda *_: result
-    reply = asyncio.run(ChatService(retrieval).chat("Siapa tokoh utama Wayang Sasak?"))
+    reply = asyncio.run(ChatService(retrieval).chat("Jelaskan Jayangrana"))
     assert reply.answer.count(text) == 1
     assert reply.llm_status == "not_configured" and not reply.llm_used
     assert reply.sources[0].id == hit.id and reply.sources[0].label == hit.label
@@ -143,7 +143,8 @@ def test_gunungan_philosophy_is_grounded_or_rejected_when_absent(has_philosophy)
         assert reply.answer == original
         assert reply.sources[0].evidence_ids == [evidence_id]
     else:
-        assert not reply.llm_used and reply.llm_status == "invalid_response"
+        assert not reply.llm_used and reply.llm_status == "insufficient_evidence"
+        assert not sent  # Missing requested field is rejected before the provider.
         assert original not in reply.answer
         assert all(evidence_id not in source.evidence_ids for source in reply.sources)
     # These project concepts cannot appear unless supplied by fixture evidence.

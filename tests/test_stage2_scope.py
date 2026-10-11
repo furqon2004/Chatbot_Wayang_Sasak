@@ -16,15 +16,15 @@ from scripts.colab_search_smoke_test import assert_search_payload
 from test_retrieval import FakeCollection
 
 
-def test_default_app_never_reads_gemini_key_or_registers_chat(monkeypatch, settings, fake_resources):
+def test_default_app_never_reads_provider_key_or_registers_chat(monkeypatch, settings, fake_resources):
     original = os.getenv
 
     def guarded(name, default=None):
-        assert name != "GEMINI_API_KEY", "Tahap 2 tidak boleh membaca key"
+        assert name != "LLM_API_KEY", "Tahap 2 tidak boleh membaca key"
         return original(name, default)
 
     monkeypatch.setattr(os, "getenv", guarded)
-    assert Settings.from_env().gemini_api_key == ""
+    assert Settings.from_env().llm_api_key == ""
     with TestClient(create_app(settings, lambda _: fake_resources, lambda *_: None)) as client:
         assert client.post("/chat", json={"message": "contoh tokoh"}).status_code == 404
         response = client.post("/search", json={"query": "Coba berikan saya contoh tokoh Wayang Saksak?"})

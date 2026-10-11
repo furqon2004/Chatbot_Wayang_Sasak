@@ -1,8 +1,8 @@
-"""Google Search metadata, not model-written links, provides web citations."""
+"""OpenAI web-search annotations, not model-written links, provides web citations."""
 from .chat_schemas import WebSource
 
 WEB_INSTRUCTION = """Anda pemandu budaya Wayang Sasak dari Lombok. Jawab dalam bahasa Indonesia.
-WAJIB gunakan Google Search untuk menjawab sejarah, asal-usul, lakon, jalan cerita,
+WAJIB gunakan web_search untuk menjawab sejarah, asal-usul, lakon, jalan cerita,
 dan jumlah tokoh. Utamakan sumber kebudayaan pemerintah, museum, kampus, jurnal,
 dan narasumber dalang yang jelas. Bedakan kisah dalam lakon dari peristiwa sejarah.
 Jangan menggabungkan versi Sasak dengan Jawa/Bali tanpa menjelaskan perbedaannya.
@@ -23,53 +23,50 @@ Gunakan paragraf teks biasa tanpa HTML, tanpa tautan buatan, tanpa blok kode.
 
 
 def grounded_answer(response):
-    text = response.text or ""
-    candidates = response.candidates or []
-    feedback = getattr(response, "prompt_feedback", None)
-    reason = getattr(feedback, "block_reason", None)
-    if reason and str(reason).split(".")[-1] != "BLOCK_REASON_UNSPECIFIED":
-        raise ValueError("Blocked answer")
-    if not candidates or not text.strip() or len(text) > 7200:
-        raise ValueError("Missing answer")
-    candidate = candidates[0]
-    if str(getattr(candidate, "finish_reason", "STOP")).split(".")[-1] != "STOP":
-        raise ValueError("Incomplete answer")
-    metadata = getattr(candidate, "grounding_metadata", None)
-    if not metadata or not metadata.web_search_queries:
-        raise ValueError("No search performed")
-    chunks = metadata.grounding_chunks or []
-    sources, by_chunk, by_url = [], {}, {}
-    inserts = {}
-    for support in metadata.grounding_supports or []:
-        segment = support.segment
-        if segment is None or not segment.text or segment.text not in text:
+    """Validate completed search + URL annotations, never model-authored links."""
+    import re
+    if getattr(response, "status", None) != "completed":
+        raise ValueError("Incomplete response")
+    output = getattr(response, "output", []) or []
+    if not any(getattr(item, "type", None) == "web_search_call" and
+               getattr(item, "status", None) == "completed" for item in output):
+        raise ValueError("No completed search")
+    sources, by_url, paragraphs = [], {}, []
+    for item in output:
+        if getattr(item, "type", None) != "message":
             continue
-        end = text.find(segment.text) + len(segment.text)
-        for index in support.grounding_chunk_indices or []:
-            if not isinstance(index, int) or not 0 <= index < len(chunks):
-                continue
-            web = getattr(chunks[index], "web", None)
-            if web is None:
-                continue
-            try:
-                source = WebSource(title=(web.title or "Sumber web")[:300], url=web.uri)
-            except (ValueError, TypeError):
-                continue
-            if source.url not in by_url:
-                if len(sources) >= 20:
-                    continue
-                sources.append(source)
-                by_url[source.url] = len(sources)
-            by_chunk[index] = by_url[source.url]
-            inserts.setdefault(end, set()).add(by_chunk[index])
-    if not sources or not inserts:
-        raise ValueError("No supported web citations")
-    for end, indices in sorted(inserts.items(), reverse=True):
-        text = text[:end] + " " + " ".join(f"[{i}]" for i in sorted(indices)) + text[end:]
-    if len(text) > 8000:
-        raise ValueError("Answer too large")
-    entry = getattr(metadata, "search_entry_point", None)
-    html = getattr(entry, "rendered_content", None)
-    if html and len(html) > 30000:
-        raise ValueError("Search suggestions too large")
-    return text, sources, html
+        for part in item.content:
+            if getattr(part, "type", None) != "output_text":
+                raise ValueError("Unsupported response content")
+            text = part.text
+            if not text.strip() or len(text) > 7200:
+                raise ValueError("Missing answer")
+            spans = []
+            for annotation in part.annotations:
+                if annotation.type != "url_citation":
+                    raise ValueError("Unsupported citation")
+                start, end = annotation.start_index, annotation.end_index
+                if type(start) is not int or type(end) is not int or not 0 <= start < end <= len(text):
+                    raise ValueError("Invalid citation range")
+                source = WebSource(title=annotation.title, url=annotation.url)
+                if source.url not in by_url:
+                    if len(sources) >= 20:
+                        raise ValueError("Too many sources")
+                    sources.append(source)
+                    by_url[source.url] = len(sources)
+                spans.append((start, end, by_url[source.url]))
+            if not spans:
+                raise ValueError("No supported citations")
+            spans.sort()
+            if any(right[0] < left[1] for left, right in zip(spans, spans[1:])):
+                raise ValueError("Overlapping citations")
+            for start, end, number in reversed(spans):
+                text = text[:start] + f"[{number}]" + text[end:]
+            # Do not display URLs/HTML authored outside verified annotation spans.
+            if re.search(r"https?://|www\.|<[^>]+>|```", text, re.I):
+                raise ValueError("Unverified markup or URL")
+            paragraphs.append(text)
+    text = "\n\n".join(paragraphs)
+    if not text or len(text) > 8000 or not sources:
+        raise ValueError("Missing grounded answer")
+    return text, sources, None

@@ -1,3 +1,7 @@
+> Catatan migrasi OpenAI: uraian provider/konfigurasi lama di bawah merupakan
+> catatan historis. Implementasi aktif memakai OpenAI untuk narasi dan web;
+> lihat [konfigurasi chat](chat.md). Hasil audit lama bukan validasi migrasi terbaru.
+
 # Threat model — secure chat
 
 Baseline: `feat/stage3-secure-chat`, `084f27e`; 165 tests passed before changes.

@@ -28,21 +28,21 @@ def test_embedding_normalization_requires_explicit_boolean(monkeypatch):
 
 
 @pytest.mark.parametrize("name,value", [
-    ("GEMINI_MODEL", "invalid/private/path"), ("GEMINI_TIMEOUT_SECONDS", "nan"),
-    ("GEMINI_TIMEOUT_SECONDS", "0"), ("GEMINI_TIMEOUT_SECONDS", "61"),
-    ("GEMINI_MAX_ATTEMPTS", "4"),
+    ("LLM_MODEL", "invalid/private/path"), ("LLM_TIMEOUT_SECONDS", "nan"),
+    ("LLM_TIMEOUT_SECONDS", "0"), ("LLM_TIMEOUT_SECONDS", "61"),
+    ("LLM_MAX_ATTEMPTS", "4"),
 ])
-def test_gemini_invalid_settings_fail_without_echoing_value(monkeypatch, name, value):
+def test_provider_invalid_settings_fail_without_echoing_value(monkeypatch, name, value):
     monkeypatch.setenv(name, value)
     with pytest.raises(ValueError, match=name):
         Settings.from_env()
 
 
-def test_default_gemini_model(settings):
-    assert settings.gemini_model == "gemini-3.6-flash"
-    assert Settings.from_env().gemini_model == "gemini-3.6-flash"
+def test_default_llm_model(settings):
+    assert settings.llm_model == "gpt-4.1-mini"
+    assert Settings.from_env().llm_model == "gpt-4.1-mini"
 
 
-def test_gemini_model_environment_override(monkeypatch):
-    monkeypatch.setenv("GEMINI_MODEL", "gemini-operator-model")
-    assert Settings.from_env().gemini_model == "gemini-operator-model"
+def test_llm_model_environment_override(monkeypatch):
+    monkeypatch.setenv("LLM_MODEL", "provider-operator-model")
+    assert Settings.from_env().llm_model == "provider-operator-model"

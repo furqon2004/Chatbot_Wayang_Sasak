@@ -1,142 +1,59 @@
-# Tahap 3: chat dengan evidence tervalidasi
+# Chat dan pencarian OpenAI
 
-**Status: perbaikan kompatibilitas berdasarkan validasi Colab pengguna.**
-Pengguna membuktikan akses Gemini 3.6 Flash dan structured output dengan
-`response_json_schema`. Pengguna kini melaporkan smoke Gemini asli **5/5 lulus**,
-termasuk filosofi Gunungan dengan `llm_used=true` dan `llm_status=used`.
-Baseline aktif 48 chunk mencakup `gunungan__filosofi`; pembaruan pengetahuan
-dan artefak Drive disengaja oleh proyek. Lihat [provenance dan baseline](retrieval.md#baseline-artefak-aktif--pembaruan-gunungan-25-september-2026).
-Test lokal memakai mock tanpa membaca key atau memanggil API asli.
+Backend memakai OpenAI untuk narasi lokal dan pencarian internet, dengan satu
+`LLM_API_KEY`. Default `LLM_PROVIDER=openai` dan `LLM_MODEL=gpt-4.1-mini`.
+Tidak ada dependensi atau adapter Gemini aktif. Konfigurasi lama `GEMINI_*`
+tidak digunakan. Pengaturan dibaca proses backend; restart setelah pembaruan kode.
 
-`POST /chat` menerima `{"message":"Jelaskan Jayangrana"}`. Message 1–1000
-karakter dan harus mengandung huruf/angka. Konteks lanjutan menerima `awaiting_more`
-dan `seen_ids` (maksimal 20 ID resmi); riwayat percakapan bebas tidak dikirim.
-Field lain ditolak agar kontrak jelas. Service menggunakan instance retrieval yang sama
-dengan `/search`.
+`POST /chat` memeriksa domain Wayang Sasak sebelum retrieval/provider.
+Katalog dan discovery peran berjalan lokal. Konteks lanjutan divalidasi backend;
+konteks lama tidak mengizinkan topik baru di luar domain.
 
-```bash
-curl -X POST http://127.0.0.1:8000/chat \
-  -H 'Content-Type: application/json' \
-  -d '{"message":"Coba berikan saya contoh tokoh Wayang Saksak?"}'
+Narasi lokal menggunakan `local-narrative-v2`, evidence JSON/retrieval asli,
+structured output dan sitasi yang dirender backend. Lihat
+[narasi interaktif dan batas faktual](interactive-narrative.md).
+ID valid dan guard heuristik bukan bukti kesetiaan faktual.
+
+Pencarian memakai SDK OpenAI Responses dengan tool `web_search` wajib.
+Backend mensyaratkan hasil pencarian selesai dan anotasi `url_citation` yang valid;
+nomor sitasi dipetakan ke sumber HTTPS dan ditampilkan sebagai tautan di UI.
+Jawaban tanpa sumber ditolak. Jika layanan atau evidence tidak tersedia,
+aplikasi memberi fallback jujur dan katalog lokal. Tidak ada jawaban pengganti
+dari ingatan model tanpa evidence. Jumlah 20 hanya cakupan katalog aplikasi.
+
+Konfigurasi aktif (lihat `.env.example`, jangan bagikan key):
+
+- `WAYANG_ENABLE_CHAT=true` mengaktifkan chat.
+- `LLM_API_KEY` dipakai kedua jalur; tidak membutuhkan key pencarian terpisah.
+- `LLM_TIMEOUT_SECONDS=45`, `LLM_MAX_ATTEMPTS=2` untuk narasi.
+- `WEB_TIMEOUT_SECONDS=45`, `WEB_MAX_ATTEMPTS=2` untuk pencarian.
+- SDK `max_retries=0`; retry aplikasi dibatasi 1?2 attempt.
+- Cache lokal TTL 900 detik/32 entri; kegagalan tidak disimpan.
+
+Smoke browser lokal opsional, dijalankan pengguna dari PowerShell:
+
+```powershell
+.\.venv\Scripts\python.exe -B .\scripts\local_browser_smoke.py --enable-search
 ```
 
-Response berisi mode, answer, sources, suggestions, llm_used, llm_status, dan
-catalog (20 ID/nama JSON) untuk mode catalog/fallback_catalog. Source answer
-berisi document `wayang_db.json`, id, label, dan evidence_ids yang benar-benar
-dirender. Mode katalog memiliki source document katalog, tanpa source palsu.
+Skrip ini memakai koneksi langsung khusus smoke, TLS aktif, retry mati,
+dan maksimal tiga panggilan SDK gabungan narasi/pencarian. Ikuti petunjuk
+terminal untuk UI. Tanpa flag tersebut pencarian tidak diaktifkan dalam smoke.
+Pengujian otomatis memakai mock dan tidak membuktikan akses/kuota akun nyata.
 
-## Profil tokoh lokal: grounding yang dapat diperiksa
+Untuk membuka UI yang tersambung ke backend smoke tersebut, jalankan terminal
+PowerShell kedua dari direktori proyek (environment ini hanya berlaku pada proses):
 
-Gemini memilih dan mengurutkan ID evidence, **bukan menulis fakta bebas**.
-Respons terstruktur divalidasi dengan Pydantic: field ekstra, ID tak dikenal,
-ID duplikat, dan output malformed ditolak. Backend merender nama asli dan
-kutipan JSON yang dipilih. Ini sengaja merupakan jawaban ekstraktif: susunan
-kalimat lebih terbatas daripada parafrase generatif, tetapi setiap pernyataan
-berasal dari evidence yang dapat dicocokkan programatik. System instruction
-saja tidak dijadikan jaminan kebenaran fakta.
-
-Context berisi maksimal 6000 karakter JSON evidence dari 3 hasil retrieval,
-termasuk ID/label/nama dan kutipan publik. Tidak ada embedding, daftar gambar,
-path internal, atau profil training dikirim. Query dikirim sebagai data di
-pesan pengguna; aturan tetap berada di system instruction. Pada jalur profil tokoh ini, tidak ada tools,
-web search, atau pengetahuan luar dipakai untuk jawaban.
-
-Mode catalog/fallback_catalog tidak memanggil Gemini. Nama di teks dan field
-terstruktur semuanya dirender dari katalog JSON, sehingga model tidak bisa
-menambah, mengganti, atau mengurangi nama. Instruksi jelas untuk mengarang tokoh
-dirutekan deterministik ke katalog. Untuk query lain, pemilihan evidence LLM
-tetap dibatasi pada ID yang diberikan. Bila evidence_ids kosong, sistem
-menyatakan informasi belum tersedia dan menawarkan katalog.
-
-Jaminan ini membatasi **asal fakta**, bukan membuktikan semua query relevan
-terjawab: ranking, kelengkapan JSON, atau evidence yang dipilih masih perlu
-evaluasi dengan data asli. Timeout/error LLM menggunakan kutipan terbaik dari
-retrieval sebagai fallback dan menandai llm_used=false.
-
-## SDK, model, dan konfigurasi
-
-SDK resmi: `google-genai>=1.30,<2`. Default `GEMINI_MODEL=gemini-3.6-flash`.
-Operator tetap dapat override melalui `GEMINI_MODEL`; adapter memakai Settings.
-Tidak ada penggantian model otomatis atau request berbayar saat startup.
-Schema dikirim melalui `response_json_schema=EvidenceSelection.model_json_schema()`
-dengan `additionalProperties=false`; validasi Pydantic lokal dan allowlist ID
-wajib tetap berlaku. HTTP 400 umum menjadi `invalid_request`, HTTP 404 menjadi
-`model_unavailable`, dan reason `API_KEY_INVALID` tetap `invalid_key`.
-
-Thinking memakai default provider tanpa parameter khusus model. Batas output
-1024 token dipertahankan berdasarkan keberhasilan eksperimen Colab pengguna;
-output terpotong tetap ditolak dan memakai fallback aman. Lihat
-[dokumentasi thinking resmi](https://ai.google.dev/gemini-api/docs/generate-content/thinking).
-
-- `GEMINI_API_KEY`: hanya environment/Colab Secrets, tidak dicetak/disimpan repo.
-- `GEMINI_MODEL`: identifier model yang tersedia untuk akun.
-- `GEMINI_TIMEOUT_SECONDS=15`: deadline total pemanggilan LLM termasuk retry,
-  rentang >0 sampai 60 detik.
-- `GEMINI_MAX_ATTEMPTS=2`: maksimum total attempt, rentang 1–3. Backoff 0.5 lalu
-  1 detik untuk error sementara 500/502/503/504 atau connection error. Timeout,
-  429/quota, key invalid, dan input/model invalid tidak di-retry. Retry bawaan
-  SDK dinonaktifkan agar jumlah attempt tidak berlipat.
-
-Key kosong tetap mengaktifkan chat deterministik. `/health` menambahkan
-gemini_configured dan gemini_client_ready; flag itu hanya validasi konfigurasi
-lokal, bukan bukti key/quota/model berhasil digunakan. Client dibuat satu kali
-di lifespan dan ditutup pada shutdown.
-
-422 untuk input invalid, 503 untuk retrieval unavailable (katalog tetap dapat
-berjalan dari JSON), 500 untuk internal error. Kegagalan Gemini menghasilkan
-HTTP 200 dengan fallback berguna; periksa llm_status: used, not_needed,
-not_configured, timeout, rate_limit, invalid_key, invalid_request, model_unavailable, unavailable,
-invalid_response, insufficient_evidence, atau internal. Log hanya durasi dan
-kategori aman. Raw exception, prompt, context, dan key tidak dikirim kembali.
-
-## Validasi Colab
-
-Pasang requirements-dev, mount Drive, pastikan smoke search lulus dengan
-threshold/normalisasi embedding yang sesuai. Simpan key melalui Colab Secrets
-dengan nama GEMINI_API_KEY dan izinkan akses notebook, atau environment.
-Skrip memuat Secrets hanya bila environment belum tersedia.
-
-```bash
-WAYANG_ENABLE_CHAT=true GEMINI_MODEL=gemini-3.6-flash python scripts/colab_chat_smoke_test.py
+```powershell
+$env:WAYANG_API_URL="http://127.0.0.1:8011"
+.\.venv\Scripts\python.exe -B -m streamlit run .\streamlit_app.py --server.port 8511
 ```
 
-Skrip ini opt-in dan dapat memakai quota/biaya API. Test default pytest tidak
-menggunakan key/API sungguhan. Smoke hanya mencetak mode/status/jumlah source,
-tidak menulis response atau key ke file. Kelulusan mengharuskan kedua kasus in-scope
-memakai Gemini sungguhan dengan ID dari context yang benar-benar dikirim; fallback saja bukan kelulusan
-integrasi. JSON dan Chroma sumber di-hash sebelum/sesudah. Model klasifikasi
-hanya dibaca oleh loader Tahap 1.
+Buka `http://localhost:8511`, mulai percakapan baru, lalu tanyakan
+“Apa itu Wayang Sasak?”. Bila evidence lokal kurang, backend mencoba web search.
+Periksa tautan sitasi pada jawaban. “Siapa tokoh utamanya?” dapat dilanjutkan
+dari konteks domain tersebut; pertanyaan pemrograman tetap ditolak lokal.
+Hentikan pemeriksaan bila provider gagal. Batas tiga panggilan SDK dihitung
+bersama untuk narasi dan web; memuat ulang UI tidak mereset batas backend.
 
-Rate limit di gateway, authentication, dan evaluasi beban belum merupakan
-deployment produksi. Batas message/context/timeout sudah diterapkan; sebelum
-membuka layanan publik, tambahkan pembatasan request/quota sesuai pengguna.
-
-Sumber resmi: [SDK yang didukung](https://ai.google.dev/gemini-api/docs/libraries),
-[Gemini 3.6 Flash](https://ai.google.dev/gemini-api/docs/models/gemini-3.6-flash),
-[Google GenAI SDK Python](https://googleapis.github.io/python-genai/).
-
-
-## Pertanyaan budaya umum dan sumber internet
-
-Sejarah, asal-usul, jalan cerita, lakon, dan jumlah tokoh diarahkan ke jalur
-`web_answer`. Gemini memakai Google Search dan backend memeriksa metadata sumber
-serta dukungan kutipan. UI menampilkan nomor referensi, tautan sumber, dan widget
-Search Suggestions dari provider. Instruksi di luar domain tetap disaring sebelum
-panggilan web. Jawaban web tidak menambahkan tokoh ke katalog atau mengubah JSON.
-
-Saat kuota Google Search atau layanannya bermasalah, aplikasi mencoba membaca
-sumber budaya publik dari daftar tetap di `app/web_sources.py`; Gemini merangkum
-teks yang berhasil diambil dengan ID sumber tervalidasi. Ini pembacaan sumber web
-terpilih, bukan mesin pencarian umum. Keterkaitan ID dan URL dapat diperiksa,
-sedangkan kesesuaian setiap parafrase tetap memiliki keterbatasan model generatif.
-Jika sumber tidak mendukung angka total atau cerita tertentu, jawaban menyatakan
-keterbatasannya. Batas 20 tokoh adalah cakupan profil/pengenalan aplikasi, bukan
-jumlah seluruh tokoh tradisional. Pertanyaan jumlah di aplikasi dijawab langsung
-berdasarkan katalog tanpa panggilan Gemini.
-
-`web_sources` membawa judul dan URL HTTPS; `sources` tetap dikhususkan untuk JSON
-lokal. HTML hanya berasal dari metadata `search_entry_point` Google dan dirender
-melalui sanitasi `st.html`, bukan HTML jawaban model. Kuota/error internet tidak
-ditampilkan sebagai jawaban terverifikasi; `llm_status` menyatakan kegagalannya.
-Circuit breaker pencarian dipisahkan dari chat biasa. Timeout web total 60 detik;
-`GEMINI_SEARCH_TIMEOUT_SECONDS` mengatur timeout model di jalur tersebut.
+Referensi kontrak: [OpenAI web search](https://developers.openai.com/api/docs/guides/tools-web-search).
