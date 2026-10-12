@@ -117,9 +117,11 @@ ke limiter atau idempotensi lokal bila shared store gagal.
   `Retry-After` bila waktu tunggu bisa dihitung. Timeout antrean menggunakan
   respons sibuk yang sama dan tidak menjalankan handler.
 - Dalam mode shared store, limiter, deduplikasi idempotensi, dan batas
-  concurrency global dibagi antar worker. Kunci hasil idempotensi punya TTL dan
-  batas ukuran. Store yang gagal tidak boleh memproses ulang key yang mungkin
-  sudah berjalan.
+  concurrency global serta FIFO waiter queue dibagi antar worker. Kunci hasil
+  idempotensi punya TTL dan batas ukuran. Store yang gagal tidak boleh
+  memproses ulang key yang mungkin sudah berjalan. FIFO queue in-memory hanya
+  berlaku pada mode satu worker; deployment multi-worker wajib mengonfigurasi
+  queue shared.
 - Tidak menjanjikan kuota identitas pengguna terverifikasi: aplikasi belum
   memiliki login. Penambahan autentikasi berada di luar desain ini.
 
@@ -169,7 +171,8 @@ ke limiter atau idempotensi lokal bila shared store gagal.
 - Tes UI, API, security, conversation context, dan dokumentasi deployment.
 - Adapter Redis memakai dependensi yang dipaketkan tetapi hanya perlu
   dikonfigurasi dan dijalankan untuk deployment multi-worker; mode satu worker
-  tidak memerlukan service Redis berjalan.
+  tidak memerlukan service Redis berjalan. Adapter membagikan rate limit,
+  FIFO queue, concurrency, idempotensi, dan lock konteks.
 
 ## Kriteria verifikasi
 
@@ -185,8 +188,8 @@ ke limiter atau idempotensi lokal bila shared store gagal.
 - Kunci backend aktif setelah pilihan pertama sukses, menolak perubahan pilihan
   katalog yang tak sah, tetapi mempertahankan override nama melalui teks.
 - Antrean dan limiter memiliki batas terukur; timeout melepas slot; respons
-  429/503 membawa `Retry-After`; concurrency dan idempotensi shared store
-  konsisten pada dua instance.
+  429/503 membawa `Retry-After`; FIFO queue, concurrency, rate limit,
+  idempotensi, dan lock konteks shared store konsisten pada dua instance.
 - Status loading hilang saat sukses/gagal dan hanya menyebut jalur yang benar-
   benar diketahui UI.
 - Suite regresi existing dan tes baru untuk alur terkait lulus.
@@ -200,4 +203,5 @@ ke limiter atau idempotensi lokal bila shared store gagal.
 - Streaming tahap demi tahap atau sistem job asinkron hanya untuk menampilkan
   posisi antrean.
 - Menjamin koordinasi global bila deployment multi-worker tidak mengonfigurasi
-  shared store.
+  shared store; mode multi-worker harus mengonfigurasinya sebelum menerima
+  traffic.
