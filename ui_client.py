@@ -27,7 +27,7 @@ class BackendError(Exception):
     """A safe, user-facing failure; never contains a server response body."""
 
 
-def request_api(path, *, payload=None, image=None):
+def request_api(path, *, payload=None, image=None, message_id=None):
     base = os.getenv("WAYANG_API_URL", "http://127.0.0.1:8000").rstrip("/")
     token = os.getenv("WAYANG_SERVICE_TOKEN", "")
     headers = {"Authorization": f"Bearer {token}"} if token else {}
@@ -37,6 +37,8 @@ def request_api(path, *, payload=None, image=None):
                 response = client.get(base + path, timeout=3)
             elif image is not None:
                 content, mime = image
+                if message_id:
+                    headers["X-Message-ID"] = message_id
                 response = client.post(base + path, headers=headers,
                                        files={"file": ("upload", content, mime)})
             else:
@@ -70,7 +72,7 @@ def request_api(path, *, payload=None, image=None):
         raise BackendError("Format respons backend tidak valid. Silakan coba lagi.") from None
 
 
-def send_message(text, uploaded=None, *, awaiting_more=False, seen_ids=(), character_id=None, explain_more=False, conversation_context=None):
+def send_message(text, uploaded=None, *, awaiting_more=False, seen_ids=(), character_id=None, explain_more=False, conversation_context=None, message_id=None):
     if uploaded is not None:
         if not uploaded.size or uploaded.size > 10 * 1024 * 1024:
             raise BackendError("Gunakan gambar tidak kosong dengan ukuran maksimal 10 MB.")
@@ -78,10 +80,13 @@ def send_message(text, uploaded=None, *, awaiting_more=False, seen_ids=(), chara
                 "webp": "image/webp"}.get(uploaded.name.rsplit(".", 1)[-1].lower())
         if mime is None:
             raise BackendError("Gunakan gambar JPEG, PNG, atau WebP.")
-        return "image", request_api("/predict-image", image=(uploaded.getvalue(), mime))
+        options = {"message_id": message_id} if message_id else {}
+        return "image", request_api("/predict-image", image=(uploaded.getvalue(), mime), **options)
     if not text.strip() or not any(c.isalnum() for c in text):
         raise BackendError("Tulis pertanyaan atau lampirkan gambar terlebih dahulu.")
     payload = {"message": text.strip()}
+    if message_id is not None:
+        payload["message_id"] = message_id
     if conversation_context is not None:
         payload["conversation_context"] = conversation_context
     if character_id is not None:

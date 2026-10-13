@@ -74,7 +74,7 @@ def audit(settings, fake_resources, monkeypatch, tmp_path):
         assert not at.exception
 
         def submit(query):
-            next(w for w in at.text_input if w.label == "Pesan").input(query)
+            next(w for w in at.text_input if w.label == "Pesan").input(query).run()
             next(b for b in at.button if b.label == "Kirim").click().run()
             assert not at.exception
 
@@ -138,7 +138,7 @@ def test_web_submit_rerender_and_cache(audit):
 
 
 def test_catalog_yes_and_character_buttons(audit):
-    next(b for b in audit.ui.button if b.label == "Lihat katalog").click().run()
+    next(b for b in audit.ui.button if b.label == "Jelajahi Katalog").click().run()
     audit.record("catalog_button", 0, 0)
     next(b for b in audit.ui.button if b.label == "Jayangrana").click().run()
     audit.record("catalog_character_button", 0, 0)

@@ -121,13 +121,13 @@ class OpenAIRagClient:
                 elif isinstance(exc, APIStatusError):
                     code = exc.status_code
                     category = ("rate_limit" if code == 429 else "invalid_key" if code in {401, 403}
-                                else "unavailable" if code >= 500 else "invalid_request")
+                                else "service_unavailable" if code >= 500 else "invalid_request")
                 elif isinstance(exc, APIConnectionError):
                     category = "unavailable"
                 else:
                     category = "internal"
                 log_failure(exc, category)
-                if category == "unavailable" and attempt + 1 < self.settings.llm_max_attempts:
+                if category in {"unavailable", "service_unavailable"} and attempt + 1 < self.settings.llm_max_attempts:
                     await self.sleep(.5 * 2 ** attempt + random.SystemRandom().uniform(0, .25))
                     continue
                 self.breaker.failed(immediate=category in {"rate_limit", "invalid_key"})

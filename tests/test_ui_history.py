@@ -5,6 +5,7 @@ def test_refresh_roundtrip_preserves_context_and_image():
     state = {"messages": [{"role": "user", "kind": "image", "image_bytes": b"fixture"}],
              "seen_ids": [0], "awaiting_more": True,
              "conversation_context": {"subject_ids": [0], "domain": "wayang_sasak"},
+             "recommendation_selections": {"message_4": 2},
              "last_question": 1000}
     assert restore(snapshot(state), now=1299) == state
 

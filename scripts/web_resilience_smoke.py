@@ -118,7 +118,7 @@ def local(settings):
 
             at = AppTest.from_file(Path(__file__).resolve().parents[1] / "streamlit_app.py", default_timeout=60).run()
             def send(text):
-                next(w for w in at.text_input if w.label == "Pesan").input(text)
+                next(w for w in at.text_input if w.label == "Pesan").input(text).run()
                 next(b for b in at.button if b.label == "Kirim").click().run()
                 assert not at.exception
                 return at.session_state["messages"][-1]["data"]

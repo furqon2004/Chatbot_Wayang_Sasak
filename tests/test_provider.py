@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.provider import ProviderClient, ProviderFailure, load_provider
+from app.provider import ProviderClient, ProviderFailure, error_category, load_provider
 
 
 def VendorError(code):
@@ -13,6 +13,18 @@ def VendorError(code):
     from openai import APIStatusError
     return APIStatusError("private vendor detail", response=httpx.Response(code,
         request=httpx.Request("POST", "https://api.openai.com/v1/responses")), body=None)
+
+
+@pytest.mark.parametrize("code,category", [(429, "rate_limit"), (503, "service_unavailable"),
+    (504, "service_unavailable")])
+def test_http_failure_categories_remain_distinct(code, category):
+    assert error_category(VendorError(code)) == category
+
+
+def test_timeout_and_network_failures_keep_separate_categories():
+    import httpx
+    assert error_category(TimeoutError()) == "timeout"
+    assert error_category(httpx.ConnectError("connection failed")) == "unavailable"
 
 
 def fake_sdk(actions):
@@ -58,7 +70,7 @@ def test_retry_exhaustion(settings):
     async def no_sleep(_):
         pass
     client = ProviderClient(settings, client=sdk, sleep=no_sleep)
-    with pytest.raises(ProviderFailure, match="unavailable"):
+    with pytest.raises(ProviderFailure, match="service_unavailable"):
         asyncio.run(client.select("query", []))
     assert len(calls) == 2
 

@@ -25,6 +25,7 @@ class ConversationContext(BaseModel):
 class ChatRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     message: str = Field(min_length=1, max_length=1000, strict=True)
+    message_id: str | None = Field(default=None, strict=True, pattern=r"^[0-9a-f]{32}$")
     awaiting_more: bool = False
     explain_more: bool = False
     character_id: Annotated[int, Field(ge=0, le=19, strict=True)] | None = None
@@ -123,7 +124,7 @@ class WebSummary(BaseModel):
 
 LLMStatus = Literal[
     "used", "not_needed", "not_configured", "timeout", "rate_limit",
-    "invalid_key", "invalid_request", "model_unavailable", "unavailable", "invalid_response",
+    "invalid_key", "invalid_request", "model_unavailable", "service_unavailable", "unavailable", "invalid_response",
     "insufficient_evidence", "internal",
 ]
 

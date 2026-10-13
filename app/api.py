@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import io
+import hashlib
 import logging
+import re
 import time
 from contextlib import asynccontextmanager
 from typing import Callable
@@ -22,7 +24,7 @@ from .retrieval import RetrievalService
 from .retrieval_resources import load_retrieval
 from .search_routes import router as search_router
 from .security_middleware import SecurityMiddleware
-from .security import event
+from .security import IdempotencyConflict, IdempotencyStore, IdempotencyUnavailable, event
 from .schemas import PredictionResponse
 from .memory_upload import MemoryUploadRoute
 
@@ -135,7 +137,7 @@ def create_app(
     )
     if active_settings.security.cors_origins:
         app.add_middleware(CORSMiddleware, allow_origins=list(active_settings.security.cors_origins),
-                           allow_methods=["GET", "POST"], allow_headers=["Authorization", "Content-Type"],
+                           allow_methods=["GET", "POST"], allow_headers=["Authorization", "Content-Type", "X-Message-ID"],
                            allow_credentials=False)
     if active_settings.security.production:
         app.add_middleware(TrustedHostMiddleware, allowed_hosts=list(active_settings.security.allowed_hosts))
@@ -148,6 +150,7 @@ def create_app(
     app.state.ready = False
     app.state.resources = None
     app.state.settings = active_settings
+    app.state.idempotency = IdempotencyStore()
     app.state.retrieval = None
     app.state.chat = None
     app.include_router(search_router)
@@ -185,30 +188,47 @@ def create_app(
         resources = request.app.state.resources
         if not request.app.state.ready or resources is None:
             raise HTTPException(status_code=503, detail="Model belum siap")
-        started = time.perf_counter()
+        message_id = request.headers.get("x-message-id")
+        if message_id is not None and not re.fullmatch(r"[0-9a-f]{32}", message_id):
+            raise HTTPException(status_code=422, detail="ID pesan tidak valid")
         try:
             if file.content_type not in ALLOWED_CONTENT_TYPES:
                 raise HTTPException(status_code=415, detail="Tipe file harus JPEG, PNG, atau WebP")
             data = await _read_limited(file, active_settings.max_upload_bytes)
-            image = await run_in_threadpool(_decode_image, data, active_settings.security.max_pixels)
-            try:
-                result = await run_in_threadpool(
-                    predict_image, image, resources,
-                    min_confidence=active_settings.min_confidence,
-                    min_margin=active_settings.min_margin,
-                )
-            finally:
-                image.close()
-        except HTTPException:
-            raise
-        except Exception:
-            LOGGER.error("Inferensi gambar gagal: internal")
-            raise HTTPException(status_code=500, detail="Inferensi gambar gagal") from None
         finally:
             await file.close()
-        event(mode=result["status"], category="_and_".join(result["decision"]["reasons"]) or "thresholds_met",
-              latency_ms=round((time.perf_counter() - started) * 1000, 2))
-        return result
+
+        async def process():
+            started = time.perf_counter()
+            try:
+                image = await run_in_threadpool(_decode_image, data, active_settings.security.max_pixels)
+                try:
+                    result = await run_in_threadpool(
+                        predict_image, image, resources,
+                        min_confidence=active_settings.min_confidence,
+                        min_margin=active_settings.min_margin,
+                    )
+                finally:
+                    image.close()
+            except HTTPException:
+                raise
+            except Exception:
+                LOGGER.error("Inferensi gambar gagal: internal")
+                raise HTTPException(status_code=500, detail="Inferensi gambar gagal") from None
+            event(mode=result["status"], category="_and_".join(result["decision"]["reasons"]) or "thresholds_met",
+                  latency_ms=round((time.perf_counter() - started) * 1000, 2))
+            return result
+
+        if message_id:
+            identity = {"endpoint": "/predict-image", "content_type": file.content_type,
+                        "sha256": hashlib.sha256(data).hexdigest()}
+            try:
+                return await request.app.state.idempotency.run(message_id, identity, process)
+            except IdempotencyConflict:
+                raise HTTPException(status_code=409, detail="ID pesan sudah digunakan untuk permintaan lain") from None
+            except IdempotencyUnavailable:
+                raise HTTPException(status_code=503, detail="Layanan sedang sibuk") from None
+        return await process()
 
     app.include_router(prediction_router)
     return app

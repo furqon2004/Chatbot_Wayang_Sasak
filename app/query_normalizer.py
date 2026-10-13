@@ -10,13 +10,20 @@ STOPWORDS = frozenset("apa apakah siapa bagaimana jelaskan tolong coba berikan s
 QUERY_ALIASES = {
     "jlskn": "jelaskan", "jlsin": "jelaskan", "sy": "saya",
     "ttg": "tentang", "tntg": "tentang", "wyng": "wayang",
-    "wyg": "wayang", "saksak": "sasak", "nurswan": "nursiwan",
+    "wyg": "wayang", "wayng": "wayang", "saksak": "sasak",
+    "gw": "saya", "gue": "saya", "gua": "saya",
+    "nurswan": "nursiwan", "gmn": "bagaimana", "gimana": "bagaimana",
+    "yg": "yang", "tau": "tahu", "pengen": "ingin",
+    "critain": "ceritakan", "ceritain": "ceritakan", "jelasin": "jelaskan",
+    "apaan": "apa", "ngenalin": "mengenali",
 }
 
 
 def normalize_query(query: str) -> str:
     text = unicodedata.normalize("NFKC", query).casefold()
     text = "".join(char if char.isalnum() else " " for char in text)
+    text = re.sub(r"\bjay ang rana\b", "jayangrana", text)
+    text = re.sub(r"\bumr maya\b", "umar maya", text)
     return " ".join(QUERY_ALIASES.get(token, token) for token in text.split())
 
 
@@ -26,7 +33,13 @@ def terms(query: str) -> set[str]:
 
 def catalog_intent(normalized: str) -> bool:
     return bool(re.search(
-        r"\b(?:contoh (?:tokoh|karakter)|daftar (?:tokoh|karakter)|siapa saja|"
+        r"\b(?:tampilkan (?:katalog|daftar)(?: wayang sasak)?|"
+        r"lihat (?:semua )?(?:tokoh|karakter)(?: wayang sasak)?(?: yang tersedia)?|"
+        r"semua (?:tokoh|karakter)(?: wayang sasak)?(?: yang tersedia)?|"
+        r"contoh (?:tokoh|karakter)|daftar (?:tokoh|karakter)|siapa saja|"
+        r"siapa (?:saja|aja) (?:tokoh|karakter)(?:nya)?|"
+        r"(?:tokoh|karakter)(?:nya)? siapa (?:saja|aja)|"
+        r"(?:tokoh|karakter) (?:lainnya|lain) ada (?:tidak|gak|enggak)|"
         r"pilihan (?:tokoh|karakter)|(?:tokoh|karakter)(?: wayang)?(?: sasak)? apa saja)\b",
         normalized,
     ))
@@ -47,6 +60,7 @@ class IntentDecision:
     query: str = ""
     scope_notice: str | None = None
     comparison_ids: frozenset[int] = frozenset()
+    semantic_intent: str = "WAYANG_REQUEST"
 
 
 def inspection_text(value: str) -> str:
@@ -87,7 +101,15 @@ def classify_intent(query: str, catalog) -> IntentDecision:
     def domain(part):
         value = normalize_query(part)
         return bool(re.search(r"\b(?:wayang sasak|pewayangan sasak|serat menak|cerita menak|jayagrana|gununggan)\b", value)
+                    or re.fullmatch(
+                        r"(?:tokoh|karakter) (?:yang )?(?:utama(?:nya)?|licik|jahat|baik|bijaksana|cerdik|"
+                    r"kuat|sakti|paling kuat|paling sakti|paling penting)"
+                    r"(?: dalam (?:cerita|kisah) (?:ini|tersebut|tadi))? siapa(?: namanya)?", value)
+                    or re.fullmatch(
+                        r"siapa(?:kah)? (?:tokoh|karakter)(?: yang)? (?:utama(?:nya)?|licik|jahat|baik|"
+                        r"bijaksana|cerdik|kuat|sakti|paling kuat|paling sakti|paling penting)(?: namanya)?", value)
                     or re.fullmatch(r"(?:berapa|jumlah|berapa jumlah|total) (?:tokoh|karakter)(?: di| dalam)? (?:sistem|aplikasi|katalog|database)", value)
+                    or re.search(r"\b(?:mengenali|identifikasi)\b.*\btokoh", value)
                     or catalog_intent(value)
                     or any(re.search(r"\b" + re.escape(name) + r"\b", value) for name in names))
     relevant = domain(query)
@@ -127,34 +149,50 @@ def classify_intent(query: str, catalog) -> IntentDecision:
         return IntentDecision(relevant, "unsupported")
     if rejected:
         return IntentDecision(relevant, "mixed", ". ".join(accepted),
-            "Instruksi di luar domain diabaikan; jawaban hanya berdasarkan evidence Wayang Sasak.", comparison)
-    return IntentDecision(relevant, "allowed", query, comparison_ids=comparison)
+            "Aku khusus membantu membahas Wayang Sasak, jadi kita fokus ke Wayang Sasak, ya! 🎭", comparison,
+            "MIXED")
+    semantic_intent = (
+        "CATALOG_REQUEST" if catalog_intent(normalized) else
+        "GENERAL_WAYANG_EXPLANATION" if local_overview_intent(query) == "overview" else
+        "WAYANG_REQUEST"
+    )
+    return IntentDecision(relevant, "allowed", query, comparison_ids=comparison,
+                          semantic_intent=semantic_intent)
 
 
 def general_knowledge_intent(query: str) -> bool:
     value = normalize_query(query)
+    if local_overview_intent(query) == "overview":
+        return True
     standalone = {"sejarah", "sejarahnya", "jalan cerita", "alur cerita", "ceritanya", "asal usul"}
     if value in standalone:
         return True
-    cultural = bool(re.search(r"\b(?:wayang|sasak|menak|selaparang|lombok)\b", value))
-    topics = bool(re.search(r"\b(?:sejarah|asal|usul|cerita|ceritakan|ceritain|bercerita|kisah|lakon|epos|serat|babad|dalang|pertunjukan|jumlah|berapa|total|banyak|internet)\b", value))
+    cultural = bool(re.search(r"\b(?:wayang|sasak|menak|selaparang|lombok)\b", value)
+                    or re.search(r"\b(?:mengenali|identifikasi)\b.*\btokoh", value))
+    topics = bool(re.search(r"\b(?:sejarah|asal|usul|cerita|ceritakan|bercerita|kisah|lakon|epos|serat|babad|dalang|pertunjukan|pengertian|apaan|mengenali|jumlah|berapa|total|banyak|internet)\b", value))
     overview = bool(re.search(
-        r"\b(?:apa itu|apa yang dimaksud dengan|jelaskan|penjelasan|informasi|mengenal)"
-        r"(?: dong| saya| aku| kepada saya| kepada aku)?(?: tentang| mengenai)? wayang sasak\b",
+        r"\b(?:apa itu|apa yang dimaksud dengan|jelaskan|penjelasan|informasi|mengenal|ingin tahu)"
+        r"(?: dong| saya| aku| kepada saya| kepada aku)?(?: tentang| mengenai| soal)? wayang sasak\b",
         value,
-    ))
+    ) or re.search(r"\bwayang sasak apaan(?: sih| dong)?\b", value))
     return cultural and (topics or overview)
 
 
 def local_overview_intent(query: str) -> str | None:
     """Only bounded overview requests; internet and richer history stay grounded."""
     value = normalize_query(query)
-    if re.fullmatch(
-        r"(?:tolong |coba )?(?:apa itu|apa yang dimaksud dengan|jelaskan|penjelasan|"
-        r"ceritakan|ceritain|berikan saya informasi|saya ingin mengenal|explain)"
-        r"(?: dong| saya| aku| kepada saya| kepada aku)?(?: tentang| mengenai)?"
-        r" wayang sasak(?: ya| dong)?", value,
-    ):
+    if catalog_intent(value):
+        return None
+    if re.fullmatch(r"(?:pewayangan sasak|wayang sasak)(?: adalah| itu)?", value):
+        return "overview"
+    action = (
+        r"(?:(?:(?:coba|tolong) )?(?:apa itu|apa yang dimaksud(?: dengan)?|"
+        r"jelaskan(?: (?:saya|aku))?|ceritakan(?: (?:saya|aku))?|penjelasan|berikan saya informasi|explain)|"
+        r"(?:aku|saya) (?:ingin|mau) (?:tahu|mengenal))"
+    )
+    if re.fullmatch(action + r"(?: lebih banyak)?(?: tentang| mengenai| soal)? wayang sasak(?: ya| dong| sih)?", value):
+        return "overview"
+    if re.fullmatch(r"(?:(?:sebenarnya|jadi) )?wayang sasak (?:(?:itu )?apa(?: sih)?|apa)", value):
         return "overview"
     if re.fullmatch(r"(?:apa hubungan|apa kaitan|jelaskan hubungan) wayang sasak dengan (?:cerita |serat )?menak", value):
         return "menak"

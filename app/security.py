@@ -1,6 +1,9 @@
 """Per-instance admission controls and allowlisted security events."""
 from collections import OrderedDict
+import asyncio
+import copy
 from contextvars import ContextVar
+import hashlib
 import json
 import logging
 import re
@@ -72,6 +75,64 @@ class Capacity:
 
     def release(self):
         self._slots.release()
+
+
+class IdempotencyConflict(ValueError):
+    """A message ID was reused for a different payload."""
+
+
+class IdempotencyUnavailable(RuntimeError):
+    """The bounded store has no room for another in-flight action."""
+
+
+class IdempotencyStore:
+    """Bounded per-process result cache for retried synchronous chat actions."""
+    def __init__(self, ttl=300, max_entries=512, clock=time.monotonic):
+        self.ttl, self.max_entries, self.clock = ttl, max_entries, clock
+        self._entries = OrderedDict()
+        self._lock = asyncio.Lock()
+
+    async def run(self, message_id, payload, operation):
+        fingerprint = hashlib.sha256(json.dumps(
+            payload, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode()).hexdigest()
+        owner = False
+        async with self._lock:
+            now = self.clock()
+            for key, entry in list(self._entries.items()):
+                if entry["future"].done() and entry["created"] <= now - self.ttl:
+                    self._entries.pop(key)
+            entry = self._entries.get(message_id)
+            if entry and entry["fingerprint"] != fingerprint:
+                raise IdempotencyConflict
+            if entry:
+                self._entries.move_to_end(message_id)
+                future = entry["future"]
+            else:
+                while len(self._entries) >= self.max_entries:
+                    removable = next((key for key, value in self._entries.items()
+                                      if value["future"].done()), None)
+                    if removable is None:
+                        raise IdempotencyUnavailable
+                    self._entries.pop(removable)
+                future = asyncio.get_running_loop().create_future()
+                self._entries[message_id] = {"fingerprint": fingerprint, "future": future, "created": now}
+                owner = True
+        if not owner:
+            status, result = await asyncio.shield(future)
+            if status == "error":
+                raise result
+            return copy.deepcopy(result)
+        try:
+            result = await operation()
+            cached = copy.deepcopy(result)
+        except BaseException as exc:
+            async with self._lock:
+                self._entries.pop(message_id, None)
+                future.set_result(("error", exc))
+            raise
+        async with self._lock:
+            future.set_result(("ok", cached))
+        return result
 
 
 class CircuitBreaker:

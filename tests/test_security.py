@@ -69,14 +69,16 @@ def test_security_mixed_and_general_intent_are_grounded(message, web):
     reply = asyncio.run(ChatService(retrieval, llm).chat(message))
     if not web:
         assert "website" not in retrieval.search.call_args.args[0]
-        if "website" in message:
-            assert "di luar domain diabaikan" in reply.scope_notice
+    if "website" in message:
+        assert "fokus ke Wayang Sasak" in reply.scope_notice
+        assert len(reply.scope_notice) < 250
     assert reply.mode == "web_answer" and reply.llm_used
     query = llm.search.call_args.args[0]
     assert "website" not in query
     assert reply.answer == "Penjelasan budaya dari sumber web [1]"
     assert reply.web_sources[0].url == "https://example.org/wayang-sasak"
-    assert "20 tokoh" in reply.scope_notice
+    if "website" not in message:
+        assert "20 tokoh" in reply.scope_notice
     assert not llm.calls
 
 
@@ -480,3 +482,20 @@ def test_security_safety_rejection_never_retried(settings):
     with pytest.raises(ProviderFailure, match="invalid_response"):
         asyncio.run(ProviderClient(settings, client=sdk).select("query", []))
     assert len(calls) == 1
+def test_idempotency_store_shares_an_inflight_result():
+    import asyncio
+    from app.security import IdempotencyStore
+
+    async def check():
+        store = IdempotencyStore()
+        calls = []
+        async def operation():
+            calls.append(1)
+            await asyncio.sleep(.01)
+            return {"answer": "grounded"}
+        results = await asyncio.gather(
+            store.run("c" * 32, {"endpoint": "/chat", "message": "x"}, operation),
+            store.run("c" * 32, {"endpoint": "/chat", "message": "x"}, operation))
+        assert calls == [1] and results == [{"answer": "grounded"}] * 2
+
+    asyncio.run(check())

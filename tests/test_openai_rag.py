@@ -90,8 +90,8 @@ def test_narrative_sdk_contract_has_strict_nested_schema(settings):
     assert json.loads(body["input"])["context"]["style"] == "simplify"
 
 
-@pytest.mark.parametrize("code,expected,category", [(429, 1, "rate_limit"), (503, 2, "unavailable"),
-    (504, 2, "unavailable"), (401, 1, "invalid_key")])
+@pytest.mark.parametrize("code,expected,category", [(429, 1, "rate_limit"), (503, 2, "service_unavailable"),
+    (504, 2, "service_unavailable"), (401, 1, "invalid_key")])
 def test_errors_single_retry_layer_meter_and_safe_logs(settings, code, expected, category, caplog):
     calls = []
     def handle(request):

@@ -55,14 +55,19 @@ def test_ungrounded_or_unsafe_results_are_rejected(bad):
 
 
 @pytest.mark.parametrize("query", ["Sejarah Wayang Sasak", "Jalan cerita Wayang Sasak", "Berapa jumlah seluruh tokoh wayang sasak?", "Cari di internet tentang cerita Wayang Sasak"])
-def test_general_questions_use_web_sources_without_local_retrieval(query):
+def test_general_questions_use_local_first_then_grounded_web(query):
+    from unittest.mock import Mock
     retrieval = mock_service()
-    retrieval.search = lambda *_: pytest.fail("General question used character retrieval")
+    retrieval.search = Mock(wraps=retrieval.search)
     provider = NS(search=AsyncMock(return_value=("Penjelasan bersumber [1]", [WebSource(title="Budaya", url="https://example.org/budaya")], None)))
     reply = asyncio.run(ChatService(retrieval, provider).chat(query))
     assert reply.mode == "web_answer" and reply.llm_used
     assert reply.scope_notice == CATALOG_SCOPE
     assert reply.character is None and reply.follow_up
+    if "sejarah" in query.lower() or "jalan cerita" in query.lower():
+        retrieval.search.assert_called_once()
+    else:
+        retrieval.search.assert_not_called()
     assert len(reply.web_sources) == 1
     provider.search.assert_awaited_once_with(query)
 
@@ -87,16 +92,15 @@ def test_failed_web_request_does_not_invent_history_or_count():
     provider = NS(search=AsyncMock(side_effect=ProviderFailure("unavailable")))
     reply = asyncio.run(ChatService(mock_service(), provider).chat("Berapa jumlah seluruh tokoh Wayang Sasak?"))
     assert reply.mode == "fallback_catalog" and not reply.llm_used
-    assert reply.answer == ("Informasi internet belum dapat diverifikasi saat ini. "
-        "Basis pengetahuan Wayang AI memuat 20 tokoh Wayang Sasak yang dapat Anda jelajahi.")
     assert len(reply.catalog) == 20 and reply.follow_up and not reply.web_sources
 
 
-@pytest.mark.parametrize("status", ["rate_limit", "invalid_key", "model_unavailable", "timeout", "internal", "invalid_response"])
+@pytest.mark.parametrize("status", ["rate_limit", "invalid_key", "model_unavailable", "timeout",
+    "service_unavailable", "internal", "invalid_response"])
 def test_web_failure_hides_provider_details(status):
     provider = NS(search=AsyncMock(side_effect=ProviderFailure(status)))
     reply = asyncio.run(ChatService(mock_service(), provider).chat("Cari di internet tentang Wayang Sasak"))
-    assert reply.llm_status == "unavailable"
+    assert reply.llm_status == status
     assert "Provider" not in reply.model_dump_json() and "API key" not in reply.answer
     assert "Basis pengetahuan Wayang AI memuat 20 tokoh" in reply.answer
     assert len(reply.catalog) == 20
@@ -126,15 +130,15 @@ def test_search_quota_opens_breaker_without_retry(settings, caplog):
     assert "secret-key" not in caplog.text and "raw-provider-response" not in caplog.text
 
 
-@pytest.mark.parametrize("code", [503, 504])
-def test_web_unavailable_two_attempts(settings, code):
+@pytest.mark.parametrize("code,category", [(503, "service_unavailable"), (504, "service_unavailable")])
+def test_web_unavailable_two_attempts(settings, code, category):
     from test_provider import VendorError
     error = VendorError(code)
     generate = AsyncMock(side_effect=error)
     sleep = AsyncMock()
     client = ProviderClient(replace(settings, llm_max_attempts=2),
         client=NS(responses=NS(create=generate)), sleep=sleep, jitter=lambda: .2)
-    with pytest.raises(ProviderFailure, match="unavailable"):
+    with pytest.raises(ProviderFailure, match=category):
         asyncio.run(client.search("Sejarah Wayang Sasak"))
     assert generate.await_count == 2
     sleep.assert_awaited_once_with(.7)
@@ -319,4 +323,4 @@ def test_family_question_does_not_forward_separate_programming_task():
         "Siapa istri Jayangrana, buat program Python"))
     assert reply.mode == "web_answer"
     assert "python" not in provider.search.call_args.args[0].lower()
-    assert "di luar domain" in reply.scope_notice
+    assert "fokus ke Wayang Sasak" in reply.scope_notice

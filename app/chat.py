@@ -44,13 +44,16 @@ def overview_context(context, topic):
     return rows
 
 
-def overview_fallback(catalog):
-    return ChatResponse(mode="fallback_catalog", llm_status="insufficient_evidence",
-        answer="Evidence lokal belum cukup untuk menjawab pengantar Wayang Sasak atau hubungannya dengan cerita Menak. "
-               "Diperlukan materi definisi dan konteks pertunjukan, serta penjelasan hubungan dengan cerita Menak, "
-               "disertai sumber dan halaman atau bagian yang dapat dirujuk. Silakan jelajahi profil tokoh yang tersedia.",
-        sources=[], catalog=catalog.items,
-        follow_up="Apakah Anda ingin tahu tokoh Wayang Sasak yang lain?")
+def grounding_fallback(status="insufficient_evidence"):
+    limitation = {
+        "not_configured": "Pencarian web belum tersedia saat ini.",
+        "insufficient_evidence": "Sumber yang tersedia belum cukup untuk menjawabnya dengan yakin.",
+    }.get(status, "Pencarian web belum dapat diverifikasi saat ini.")
+    return ChatResponse(mode="conversation", llm_status=status,
+        answer="Aku belum menemukan sumber terverifikasi yang cukup untuk menjawab pertanyaan Wayang Sasak itu. "
+               f"{limitation} Aku tidak ingin mengarang; coba tanyakan hal yang lebih spesifik tentang tokoh, "
+               "atau coba lagi nanti.",
+        sources=[], conversation_context=ConversationContext(domain="wayang_sasak"))
 
 
 def evidence_context(results, catalog=None) -> list[dict]:
@@ -170,16 +173,29 @@ class ChatService:
         # Inspect the original message before resolving any reference.
         if unsafe_evidence(message):
             return catalog_reply(catalog.response(message, "", True))
+        if re.fullmatch(r"(?:bagaimana|gimana) cara (?:mengenali|ngenalin) tokoh(?:nya)?", normalize_query(message)):
+            message += " dalam Wayang Sasak"
         # Inspect the original request before old context or UI identity can broaden it.
         from .role_search import role_question
         initial = classify_intent(message, catalog)
+        role = role_question(message)
+        contextual_role = role and (initial.domain_relevant or conversation_context is not None)
+        comparison_requested = bool(re.search(r"\b(?:bandingkan|perbedaan|beda(?:nya)?|compare|versus|vs)\b", normalize_query(message)))
+        contextual_comparison = (conversation_context is not None and comparison_requested
+                                 and len(named_ids(message, catalog)) == 1)
         local_ack = normalize_query(message) in {
             "ya", "iya", "iya dong", "ya mau", "mau", "boleh", "boleh dong", "oke", "ok",
-            "lanjut", "yuk", "tentu", "tidak", "nggak", "enggak", "tidak dulu", "nggak dulu", "cukup", "nanti"}
-        if initial.intent == "unsupported" and not (reference_question(message) or role_question(message)
+            "lanjut", "yuk", "tentu", "ada yang lain", "ada yang lainnya", "yang lain", "lainnya",
+            "tidak", "nggak", "enggak", "tidak dulu", "nggak dulu", "cukup", "nanti"}
+        vague_followup = bool(conversation_context is not None and re.fullmatch(
+            r"(?:yang tadi|yg tadi|yang sebelumnya)(?: bagaimana| gimana)?", normalize_query(message)))
+        if initial.intent == "unsupported" and not (reference_question(message) or contextual_role
+                                                     or contextual_comparison or vague_followup
                                                      or (awaiting_more and local_ack)):
-            return ChatResponse(mode="fallback_catalog", sources=[], catalog=catalog.items,
-                answer="Silakan fokuskan pertanyaan pada Wayang Sasak. Anda dapat memilih profil tokoh dari katalog lokal.")
+            reply = catalog_reply(catalog.response(message, "", True))
+            reply.answer = ("Maaf, aku khusus membantu membahas Wayang Sasak. "
+                            "Kamu bisa mengenal tokoh-tokohnya melalui katalog berikut! 🎭\n\n" + reply.answer)
+            return reply
         scope_notice = initial.scope_notice
         if initial.intent == "mixed":
             message = original = initial.query
@@ -188,6 +204,12 @@ class ChatService:
             previous, prior_evidence = validated_context(conversation_context, catalog)
         except (ValueError, KeyError, IndexError, TypeError):
             return clarify("Konteks percakapan tidak cocok dengan evidence lokal. Sebutkan kembali tokoh yang dimaksud.")
+        if vague_followup:
+            if previous.subject_ids:
+                names = " dan ".join(catalog.items[i].nama for i in previous.subject_ids)
+                return clarify(f"Bagian mana dari penjelasan {names} yang ingin kamu tahu—ciri-ciri, filosofi, atau cerita?")
+            if previous.domain == "wayang_sasak":
+                return clarify("Bagian mana tentang Wayang Sasak yang ingin kamu tanyakan?")
         explicit = named_ids(message, catalog)
         from .role_search import role_question, identify_role
         if (not explicit and initial.intent in {"allowed", "mixed"}
@@ -208,14 +230,23 @@ class ChatService:
         role = role_question(message) if not explicit else None
         if role:
             phrase, explicit_domain = role
-            domain_known = explicit_domain or previous.domain == "wayang_sasak" or bool(previous.subject_ids)
+            domain_known = (explicit_domain or previous.domain == "wayang_sasak" or bool(previous.subject_ids)
+                            or bool(re.match(r"^(?:tokoh|karakter)\b", normalize_query(message))))
             inspection = message if explicit_domain else normalize_query(message) + " Wayang Sasak"
             decision = classify_intent(inspection, catalog)
             if decision.intent == "allowed":
                 if not domain_known:
                     return clarify("Apakah yang Anda maksud tokoh dalam Wayang Sasak? Sebutkan konteks atau perannya.")
-                return await identify_role(self.retrieval, phrase)
+                reply = await identify_role(self.retrieval, phrase)
+                if reply.llm_status == "insufficient_evidence":
+                    reply = await self._web_answer(phrase + " dalam Wayang Sasak")
+                    reply.conversation_context = ConversationContext(domain="wayang_sasak")
+                return reply
         subjects = explicit or ([character_id] if character_id is not None else [])
+        if intent == "comparison" and len(explicit) == 1 and previous.subject_ids:
+            subjects = list(dict.fromkeys([*previous.subject_ids, *explicit]))
+            if len(subjects) == 2:
+                message = "Bandingkan " + " dan ".join(catalog.items[i].nama for i in subjects)
         if len(subjects) > 2:
             return clarify()
         if explicit and character_id is not None and (character_id not in explicit or len(explicit) == 2):
@@ -225,17 +256,30 @@ class ChatService:
             character_id = None  # A field question is not a profile-button request.
         if reference_question(message):
             subjects = subjects or previous.subject_ids
-            plural = bool(re.search(r"\b(?:mereka|keduanya)\b", normalize_query(message)))
-            if not subjects or (len(subjects) == 2 and not plural):
-                return clarify()
-            names = " dan ".join(catalog.items[i].nama for i in subjects)
-            prefix = {"philosophy": "Apa filosofi ", "traits": "Apa ciri-ciri ",
-                      "comparison": "Bandingkan ", "simplify": "Jelaskan lebih sederhana "}.get(intent, "Jelaskan ")
-            message = prefix + names
-            if len(subjects) == 2 and intent != "comparison":
-                message = "Bandingkan " + message
-            character_id = None
-            explain_more = False
+            query = normalize_query(message)
+            if intent == "comparison" and len(subjects) < 2:
+                return clarify("Tokoh mana yang ingin kamu bandingkan dengan tokoh tadi?")
+            if not subjects and previous.domain == "wayang_sasak":
+                if re.search(r"\b(?:sejarah|cerita|asal usul)", query):
+                    message = "Sejarah Wayang Sasak"
+                elif "mengenali" in query:
+                    message = "Bagaimana cara mengenali tokoh Wayang Sasak?"
+                else:
+                    return clarify()
+                character_id = None
+                explain_more = False
+            else:
+                plural = bool(re.search(r"\b(?:mereka|keduanya)\b", query))
+                if not subjects or (len(subjects) == 2 and not plural):
+                    return clarify()
+                names = " dan ".join(catalog.items[i].nama for i in subjects)
+                prefix = {"philosophy": "Apa filosofi ", "traits": "Apa ciri-ciri ",
+                          "comparison": "Bandingkan ", "simplify": "Jelaskan lebih sederhana "}.get(intent, "Jelaskan ")
+                message = prefix + names
+                if len(subjects) == 2 and intent != "comparison":
+                    message = "Bandingkan " + message
+                character_id = None
+                explain_more = False
         if intent == "simplify" and (subjects or previous.subject_ids) and getattr(self.provider, "rag_provider", None) != "openai":
             return ChatResponse(mode="conversation", sources=[],
                 answer="Saya belum dapat menyederhanakan atau memparafrasakan penjelasan. Saya dapat menampilkan kutipan lokal tentang deskripsi, filosofi, atau ciri tokoh.",
@@ -252,7 +296,7 @@ class ChatService:
                 resolved_context=resolved)
             reply.provider_requests = meter["count"]
             if scope_notice:
-                reply.scope_notice = (scope_notice + " " + (reply.scope_notice or ""))[:250].strip()
+                reply.scope_notice = scope_notice
         finally:
             REQUEST_METER.reset(token)
         if reply.mode == "answer":
@@ -274,7 +318,7 @@ class ChatService:
     async def _chat(self, message: str, *, awaiting_more=False, seen_ids=(), character_id=None, explain_more=False,
                     original_message=None, resolved_context=None) -> ChatResponse:
         normalized = normalize_query(message).strip(" .!?")
-        if awaiting_more and normalized in {"ya", "iya", "iya dong", "ya mau", "mau", "boleh", "boleh dong", "oke", "ok", "lanjut", "yuk", "tentu"}:
+        if awaiting_more and normalized in {"ya", "iya", "iya dong", "ya mau", "mau", "boleh", "boleh dong", "oke", "ok", "lanjut", "yuk", "tentu", "ada yang lain", "ada yang lainnya", "yang lain", "lainnya"}:
             candidates = [item for item in self.retrieval.catalog.items if item.id not in seen_ids]
             if len(candidates) < 3:
                 candidates += [item for item in self.retrieval.catalog.items if item.id in seen_ids]
@@ -308,15 +352,24 @@ class ChatService:
         if named_character and family_question:
             reply = await self._web_answer(decision.query + " dalam konteks Wayang Sasak")
             if decision.scope_notice:
-                reply.scope_notice = " ".join(filter(None, [reply.scope_notice, decision.scope_notice]))
+                reply.scope_notice = decision.scope_notice
             return reply
         if not named_character and topic:
             reply = await self._answer(decision.query, original_message=original_message or message, overview_topic=topic, resolved_context=resolved_context)
             if decision.scope_notice:
-                reply.scope_notice = " ".join(filter(None, [reply.scope_notice, decision.scope_notice]))
+                reply.scope_notice = decision.scope_notice
             return reply
-        if not named_character and (general_knowledge_intent(query) or count_question or story_question):
-            return await self._web_answer(decision.query)
+        if not named_character and (count_question or re.search(r"\binternet\b", query)):
+            reply = await self._web_answer(decision.query)
+            if decision.scope_notice:
+                reply.scope_notice = decision.scope_notice
+            return reply
+        if not named_character and (general_knowledge_intent(query) or story_question):
+            reply = await self._answer(decision.query, original_message=original_message or message,
+                                       overview_topic="general", resolved_context=resolved_context)
+            if decision.scope_notice:
+                reply.scope_notice = decision.scope_notice
+            return reply
         reply = await self._answer(decision.query, decision.comparison_ids, original_message=original_message or message, resolved_context=resolved_context)
         reply.scope_notice = decision.scope_notice
         return reply
@@ -355,7 +408,7 @@ class ChatService:
                     raise ProviderFailure("insufficient_evidence")
                 return ChatResponse(mode="web_answer", answer=answer, sources=[], web_sources=sources,
                                     search_suggestions_html=suggestions_html, llm_used=True, llm_status="used",
-                                    scope_notice=CATALOG_SCOPE,
+                                    scope_notice=decision.scope_notice or CATALOG_SCOPE,
                                     follow_up="Apakah Anda ingin tahu tokoh Wayang Sasak yang lain?")
             except ProviderFailure as exc:
                 status = exc.category
@@ -364,13 +417,15 @@ class ChatService:
             except Exception:
                 status = "internal"
         LOGGER.warning("Web chat failed: category=%s", status)
+        if local_overview_intent(message) in {"overview", "menak"}:
+            return grounding_fallback(status)
         return ChatResponse(mode="fallback_catalog",
             answer="Informasi internet belum dapat diverifikasi saat ini. Basis pengetahuan Wayang AI memuat 20 tokoh Wayang Sasak yang dapat Anda jelajahi.",
             sources=[ChatSource()], catalog=self.retrieval.catalog.items,
-            llm_status="unavailable", follow_up="Apakah Anda ingin tahu tokoh Wayang Sasak yang lain?")
+            llm_status=status, follow_up="Apakah Anda ingin tahu tokoh Wayang Sasak yang lain?")
 
     async def _answer(self, message: str, comparison_ids=frozenset(), *, character_id=None, original_message=None, overview_topic=None, resolved_context=None) -> ChatResponse:
-        retrieval_query = message
+        retrieval_query = "Apa itu Wayang Sasak" if overview_topic == "overview" else message
         narrative = getattr(self.provider, "rag_provider", None) == "openai"
         resolved = resolved_context or {}
         def requested_local_profile():
@@ -403,12 +458,14 @@ class ChatService:
             if local is not None:
                 return local
             if overview_topic:
-                return overview_fallback(self.retrieval.catalog)
+                return await self._web_answer(message)
             raise
         if isinstance(result, CatalogSearch):
             local = requested_local_profile()
             if local is not None:
                 return local
+            if overview_topic == "general":
+                return await self._web_answer(message)
             if overview_topic:
                 return await self._web_answer(message)
             if narrative:
@@ -447,7 +504,7 @@ class ChatService:
                     if excerpt:
                         context.append({"evidence_id": prior["evidence_id"], "id": identity,
                             "label": item.label, "nama": item.nama, "text": excerpt})
-        if overview_topic:
+        if overview_topic in {"overview", "menak"}:
             context = overview_context(context, overview_topic)
             if not context:
                 return await self._web_answer(message)
@@ -457,6 +514,8 @@ class ChatService:
             local = requested_local_profile()
             if local is not None:
                 return local
+            if overview_topic:
+                return await self._web_answer(message)
             if narrative:
                 from .narrative import narrative_fallback
                 return narrative_fallback(self.retrieval.catalog)
@@ -491,14 +550,24 @@ class ChatService:
                     reply.character = None
                 if reply.mode == "answer":
                     self.rag_cache.put(cache_key, reply)
+                elif overview_topic:
+                    return await self._web_answer(message)
                 return reply
             except asyncio.TimeoutError:
+                if overview_topic:
+                    return await self._web_answer(message)
                 return failure_reply("timeout")
             except ProviderFailure as exc:
+                if overview_topic:
+                    return await self._web_answer(message)
                 return failure_reply(exc.category)
             except (ValueError, TypeError):
+                if overview_topic:
+                    return await self._web_answer(message)
                 return failure_reply("invalid_response")
             except Exception:
+                if overview_topic:
+                    return await self._web_answer(message)
                 return failure_reply("internal")
         status = "not_configured"
         follow_up = "Apakah Anda ingin tahu tokoh Wayang Sasak yang lain?"
@@ -520,7 +589,7 @@ class ChatService:
                 if not selection.evidence_ids:
                     status = "insufficient_evidence"
                     if overview_topic:
-                        return overview_fallback(self.retrieval.catalog)
+                        return await self._web_answer(message)
                     return catalog_reply(self.retrieval.catalog.response(message, result.normalized_query, True), "insufficient_evidence")
                 selected = [by_id[evidence_id] for evidence_id in selection.evidence_ids]
                 follow_up = selection.follow_up
@@ -538,6 +607,8 @@ class ChatService:
             finally:
                 LOGGER.info("Chat Provider selesai: category=%s duration=%.3f", status, time.perf_counter() - started)
         if status not in {"used", "not_configured"}:
+            if overview_topic:
+                return await self._web_answer(message)
             # Provider failure must never turn an unverified profile into a specific answer.
             return ChatResponse(mode="fallback_catalog", answer="Penjelasan belum dapat diverifikasi karena penyusun jawaban gagal. Silakan coba lagi atau pilih profil tokoh.",
                 sources=[], catalog=self.retrieval.catalog.items, llm_status=status)

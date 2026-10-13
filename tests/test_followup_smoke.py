@@ -68,17 +68,18 @@ def test_streamlit_context_and_numbered_sources_reach_display(monkeypatch, tmp_p
         requests.append(payload)
         fields = dict(payload)
         query = fields.pop("message")
+        fields.pop("message_id", None)
         return ask(service, query, **fields).model_dump()
     with patch("ui_client.request_api", side_effect=api):
         at = app_test().run()
         for query in ["Apa filosofi Jayangrana?", "Jelaskan lebih sederhana",
                       "Bandingkan filosofi Jayangrana dan Maktal"]:
-            next(w for w in at.text_input if w.label == "Pesan").input(query)
+            next(w for w in at.text_input if w.label == "Pesan").input(query).run()
             next(b for b in at.button if b.label == "Kirim").click().run()
             assert not at.exception
         assert requests[1]["conversation_context"]["evidence_ids"] == ["profile:0:filosofi:0"]
         assert at.session_state["conversation_context"]["subject_ids"] == [0, 2]
-        texts = [t.value for t in at.text]
+        texts = [t.value for kind in (at.text, at.markdown) for t in kind]
         assert any("[1] wayang_db.json" in t and "jayangrana" in t for t in texts)
         assert any("[2] wayang_db.json" in t and "maktal" in t for t in texts)
         assert any("Maktal" in t and "[2]" in t for t in texts)

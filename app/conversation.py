@@ -18,19 +18,27 @@ def question_intent(message):
         return "simplify"
     if re.search(r"\bfilosofi(?:nya)?\b", query):
         return "philosophy"
-    if re.search(r"\bciri(?:nya)?\b", query):
+    if re.search(r"\b(?:ciri(?:nya)?|sifat(?:nya)?)\b", query):
         return "traits"
-    if re.search(r"\b(?:bandingkan|perbedaan|beda|compare|versus|vs)\b", query):
+    if re.search(r"\b(?:bandingkan|perbedaan|beda(?:nya)?|compare|versus|vs)\b", query):
         return "comparison"
     return "profile"
 
 
 def reference_question(message):
+    query = normalize_query(message)
     return bool(re.fullmatch(
         r"(?:apa|jelaskan|bagaimana)(?: itu)? (?:filosofinya|cirinya|filosofi|ciri ciri|ciri)"
         r"(?: tokoh ini| tokoh tersebut| dia| mereka| keduanya)?|"
         r"(?:(?:coba|tolong|bisa|boleh) )?jelaskan(?: dong)? (?:lebih sederhana|lebih lanjut|lebih detail|lebih rinci|lebih terperinci|secara rinci|secara terperinci|secara ringkas)(?: lagi)?(?: dong| ya)?|ringkas(?: penjelasan(?:nya)?)?|bandingkan (?:mereka|keduanya)",
-        normalize_query(message)))
+        query) or re.fullmatch(
+        r"(?:(?:kalau|kalo|terus|lalu|yang tadi) )?(?:apa )?(?:sifat|ciri(?: ciri)?)(?:nya| dia| tokoh ini| tokoh tadi)?"
+        r"(?: bagaimana| gimana| seperti apa)?", query) or re.fullmatch(
+        r"(?:bagaimana|gimana) cara (?:mengenali|ngenalin) (?:tokoh(?:nya)?|tokoh wayang sasak)", query) or re.fullmatch(
+        r"(?:sejarah|cerita|asal usul)(?:nya)(?: bagaimana| gimana)?", query) or re.fullmatch(
+        r"(?:filosofi(?:nya)?|ciri(?: ciri)?(?:nya)?|sifat(?:nya)?) (?:apa|bagaimana|gimana)", query) or re.fullmatch(
+        r"asal(?:nya)? dari mana|(?:cerita|sejarah)(?:nya)? (?:bagaimana|gimana)|ceritakan(?: dong)?", query) or re.fullmatch(
+        r"(?:beda|bedanya) (?:sama|dengan) (?:tokoh )?(?:tadi|sebelumnya) (?:apa)", query))
 
 
 def validated_context(value, catalog):

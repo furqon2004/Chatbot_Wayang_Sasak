@@ -1,5 +1,6 @@
 """Ephemeral per-tab history. No disk/server cache, cookies, or query tokens."""
 import base64
+import re
 import time
 import uuid
 from pathlib import Path
@@ -7,7 +8,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 TTL = 300
-FIELDS = ("messages", "seen_ids", "awaiting_more", "conversation_context")
+FIELDS = ("messages", "seen_ids", "awaiting_more", "conversation_context", "recommendation_selections")
 bridge = components.declare_component("wayang_tab_history", path=str(Path(__file__).parent / "ui_history_component"))
 
 
@@ -19,7 +20,8 @@ def snapshot(state):
         if raw is not None:
             row["image_base64"] = base64.b64encode(raw).decode("ascii")
         messages.append(row)
-    return {**{key: state.get(key) for key in FIELDS}, "messages": messages,
+    return {**{key: state.get(key) for key in FIELDS},
+            "recommendation_selections": state.get("recommendation_selections", {}), "messages": messages,
             "last_question": state.get("last_question", 0)}
 
 
@@ -32,7 +34,14 @@ def restore(payload, now=None):
         return None
     if not isinstance(payload.get("messages"), list):
         return None
+    selections = payload.get("recommendation_selections") or {}
+    if (not isinstance(selections, dict) or any(
+            not isinstance(key, str) or not re.fullmatch(r"message_\d+", key)
+            or type(value) is not int or not 0 <= value < 20
+            for key, value in selections.items())):
+        return None
     result = {key: payload.get(key) for key in FIELDS}
+    result["recommendation_selections"] = selections
     messages = []
     for message in payload["messages"]:
         if not isinstance(message, dict) or message.get("role") not in {"user", "assistant"}:

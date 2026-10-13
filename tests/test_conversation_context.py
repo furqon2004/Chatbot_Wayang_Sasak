@@ -29,7 +29,10 @@ def ask(service, message, **kwargs):
     return asyncio.run(service.chat(message, **kwargs))
 
 
-@pytest.mark.parametrize("message,field", [("Apa filosofinya?", "filosofi"), ("Apa cirinya?", "ciri_ciri")])
+@pytest.mark.parametrize("message,field", [
+    ("Apa filosofinya?", "filosofi"), ("filosofinya apa?", "filosofi"),
+    ("Apa cirinya?", "ciri_ciri"), ("ciri-cirinya apa?", "ciri_ciri"),
+])
 def test_followup_retrieves_requested_field_and_server_evidence(message, field):
     service, provider = setup()
     initial = ask(service, "Jelaskan Jayangrana")
@@ -40,6 +43,63 @@ def test_followup_retrieves_requested_field_and_server_evidence(message, field):
     assert "Jayangrana" in query
     assert all(row["evidence_id"].split(":")[2] == field for row in rows)
     provider.search.assert_not_called()
+
+
+@pytest.mark.parametrize("message", ["asalnya dari mana?", "ceritanya gimana?", "ceritain dong"])
+def test_informal_story_followup_uses_previous_character(message):
+    service, _ = setup()
+    initial = ask(service, "Jelaskan Jayangrana")
+
+    reply = ask(service, message, conversation_context=initial.conversation_context)
+
+    assert reply.mode == "answer" and reply.character.id == 0
+    assert reply.sources[0].id == 0
+
+
+@pytest.mark.parametrize("question", ["Kalau sifat dia gimana?", "Yang tadi sifatnya gimana?"])
+def test_casual_pronoun_followup_uses_previous_character(question):
+    service, _ = setup()
+    initial = ask(service, "Jelaskan Jayangrana")
+    reply = ask(service, question, conversation_context=initial.conversation_context)
+    assert reply.mode == "answer" and reply.character.id == 0
+    assert reply.sources[0].evidence_ids == ["profile:0:ciri_ciri:0"]
+
+
+def test_comparison_followup_uses_previous_character_and_new_name():
+    service, _ = setup()
+    service.retrieval.semantic.scores = lambda *_: {0: .99, 1: .99}
+    initial = ask(service, "Jelaskan Jayangrana")
+    reply = ask(service, "Bedanya ama Umar Maya apa?", conversation_context=initial.conversation_context)
+    assert reply.mode == "answer"
+    assert [item.id for item in reply.subjects] == [0, 1]
+
+
+def test_vague_comparison_followup_asks_which_second_character():
+    service, provider = setup()
+    initial = ask(service, "Jelaskan Jayangrana")
+
+    reply = ask(service, "Beda sama tokoh tadi apa?", conversation_context=initial.conversation_context)
+
+    assert reply.mode == "conversation" and "tokoh" in reply.answer
+    assert reply.catalog is None
+    provider.select.assert_awaited_once()
+
+
+def test_vague_followup_uses_context_to_ask_clarification_instead_of_catalog():
+    service, provider = setup()
+    initial = ask(service, "Jelaskan Jayangrana")
+    reply = ask(service, "Yang tadi gimana?", conversation_context=initial.conversation_context)
+    assert reply.mode == "conversation" and reply.catalog is None
+    assert "Jayangrana" in reply.answer and "filosofi" in reply.answer
+    provider.select.assert_awaited_once()
+
+
+@pytest.mark.parametrize("question,identity", [("jay ang rana itu siapa", 0), ("umr maya itu siapa", 1)])
+def test_common_character_name_typos_match_catalog(question, identity):
+    service, _ = setup()
+    service.retrieval.semantic.scores = lambda *_: {identity: .99}
+    reply = ask(service, question)
+    assert reply.mode == "answer" and reply.character.id == identity
 
 
 def test_explicit_name_overrides_previous_context_and_legacy_identity():
@@ -136,7 +196,8 @@ def test_missing_field_and_empty_selection_are_not_cached():
     provider.select.assert_not_called()
     provider.select.side_effect = None
     provider.select.return_value = '{"evidence_ids":[]}'
-    assert ask(service, "Kapan Jayangrana lahir?").mode == "fallback_catalog"
+    reply = ask(service, "Kapan Jayangrana lahir?")
+    assert reply.mode == "fallback_catalog"
     assert not service.rag_cache.entries
 
 

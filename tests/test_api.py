@@ -99,6 +99,23 @@ def test_two_predictions_do_not_reload_resources(settings, fake_resources):
     assert calls == 1
 
 
+def test_image_message_id_deduplicates_retries(settings, fake_resources, monkeypatch):
+    calls = []
+    from app.api import predict_image as predict_real
+    def predict(*args, **kwargs):
+        calls.append(1)
+        return predict_real(*args, **kwargs)
+    monkeypatch.setattr("app.api.predict_image", predict)
+    app = create_app(settings, lambda _: fake_resources)
+    files = {"file": ("sample.png", image_bytes("PNG"), "image/png")}
+    headers = {"X-Message-ID": "b" * 32}
+    with TestClient(app) as client:
+        first = client.post("/predict-image", files=files, headers=headers)
+        second = client.post("/predict-image", files=files, headers=headers)
+        assert first.status_code == second.status_code == 200, (first.text, second.text)
+        assert first.json() == second.json() and len(calls) == 1
+
+
 @pytest.mark.parametrize(
     ("files", "expected_status"),
     [

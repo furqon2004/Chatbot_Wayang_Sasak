@@ -71,11 +71,11 @@ def ui_replay(previous, steps):
                                default_timeout=30).run()
         for index, query in enumerate(["Apa filosofi Jayangrana?", "Jelaskan lebih sederhana",
                                       "Bandingkan filosofi Jayangrana dan Maktal"]):
-            next(w for w in at.text_input if w.label == "Pesan").input(query)
+            next(w for w in at.text_input if w.label == "Pesan").input(query).run()
             next(b for b in at.button if b.label == "Kirim").click().run()
             assert not at.exception
-            texts = [t.value for t in at.text]
-            assert responses[index]["rendered_narrative"] in texts
+            texts = [t.value for kind in (at.text, at.markdown) for t in kind]
+            assert any(responses[index]["rendered_narrative"] in value for value in texts)
             for number, source in enumerate(responses[index]["sources"], 1):
                 assert any(f"[{number}] {source['document']}" in t and source["label"] in t for t in texts)
         assert len(calls) == 3

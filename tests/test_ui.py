@@ -4,7 +4,7 @@ from copy import deepcopy
 import builtins
 import io
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import ANY, patch
 
 import httpx
 import pytest
@@ -38,6 +38,13 @@ def test_text_routes_to_chat_and_empty_input_does_not_send():
         api.assert_not_called()
 
 
+def test_message_id_is_forwarded_for_idempotent_chat_submission():
+    message_id = "a" * 32
+    with patch("ui_client.request_api", return_value={}) as api:
+        send_message("Jelaskan Jayangrana", message_id=message_id)
+    api.assert_called_once_with("/chat", payload={"message": "Jelaskan Jayangrana", "message_id": message_id})
+
+
 def test_http_errors_do_not_expose_response_body():
     response = httpx.Response(500, text="PRIVATE RESPONSE", request=httpx.Request("POST", "http://test/chat"))
     with patch("httpx.Client.post", return_value=response):
@@ -58,11 +65,11 @@ def test_native_ui_chat_reset_and_offline():
     ):
         at.run()
         assert not at.exception
-        next(w for w in at.text_input if w.label == "Pesan").input("Siapa Jayengrana?")
+        next(w for w in at.text_input if w.label == "Pesan").input("Siapa Jayengrana?").run()
         next(b for b in at.button if b.label == "Kirim").click().run()
         assert not at.exception
         assert len(at.session_state["messages"]) == 2
-        assert any(t.value == "Jawaban pengujian" for t in at.text)
+        assert any(m.value == "Jawaban pengujian" for m in at.markdown)
         next(b for b in at.button if b.label == "Percakapan Baru").click().run()
         assert at.session_state["messages"] == []
     with patch("ui_client.request_api", side_effect=BackendError("Offline")):
@@ -234,13 +241,14 @@ def test_catalog_is_in_main_chat_and_click_opens_character():
     ) as send:
         at.run()
         assert not at.sidebar.text_input
-        next(b for b in at.button if b.label == "Lihat katalog").click().run()
+        assert not any(b.label == "Lihat katalog" for b in at.sidebar.button)
+        next(b for b in at.button if b.label == "Jelajahi Katalog").click().run()
         assert not at.exception
         assert not any(b.label == "Jayangrana" for b in at.sidebar.button)
         next(b for b in at.button if b.label == "Jayangrana").click().run()
         assert not at.exception
-        send.assert_called_once_with("Jelaskan Jayangrana", None, character_id=0)
-        assert any(t.value == "Penjelasan Jayangrana" for t in at.text)
+        send.assert_called_once_with("Jelaskan Jayangrana", None, character_id=0, message_id=ANY)
+        assert any(m.value == "Penjelasan Jayangrana" for m in at.markdown)
 
 
 @pytest.mark.parametrize("with_suggestions", [True, False])
@@ -269,7 +277,7 @@ def test_catalog_button_renders_twenty_profileless_cards_without_semantic_search
 
     with patch("ui_client.request_api", side_effect=respond) as api:
         at.run()
-        next(b for b in at.button if b.label == "Lihat katalog").click().run()
+        next(b for b in at.button if b.label == "Jelajahi Katalog").click().run()
     assert not at.exception
     api.assert_any_call("/search", payload={"query": "daftar tokoh", "top_k": 3})
     semantic.scores.assert_not_called()
@@ -277,7 +285,68 @@ def test_catalog_button_renders_twenty_profileless_cards_without_semantic_search
     for item in service.catalog.items:
         assert labels.count(item.nama) == 1
         assert item.nama not in [button.label for button in at.sidebar.button]
+    assert sum(item.value == "🎭" for item in at.markdown) == 20
     assert not at.sidebar.text_input
+
+
+def test_catalog_keeps_different_image_proportions_inside_each_card(tmp_path):
+    names = ["Jayangrana", "Umar Maya", "Maktal", "Samtanus"]
+    images = {}
+    for name, size in zip(names, [(40, 180), (180, 40), (90, 90), (55, 160)]):
+        image_path = tmp_path / f"{name.replace(' ', '_')}.png"
+        Image.new("RGB", size, "white").save(image_path)
+        images[name] = str(image_path)
+    items = [{"id": index, "nama": name, "gambar_utama": name} for index, name in enumerate(names)]
+    at = app_test()
+    at.session_state["messages"] = [{"role": "assistant", "kind": "search", "data": {"results": items}}]
+
+    with patch("ui_client.request_api", return_value={"status": "ok"}), patch(
+        "ui_media.character_image", side_effect=images.__getitem__
+    ):
+        at.run()
+
+    assert not at.exception
+    assert len(at.get("image")) == len(items)
+    assert [button.label for button in at.button if button.label in names] == names
+
+
+def test_catalog_renders_taptanus_samtanus_and_selandir_images():
+    root = Path(__file__).resolve().parents[1] / "artifacts" / "dataset_asli"
+    names = ["Taptanus", "Samtanus", "Selandir"]
+    items = [{"id": index, "nama": name, "gambar_utama": name} for index, name in enumerate(names)]
+    images = {name: str(root / name.casefold() / "1.png") for name in names}
+    at = app_test()
+    at.session_state["messages"] = [{"role": "assistant", "kind": "search", "data": {"results": items}}]
+
+    with patch("ui_client.request_api", return_value={"status": "ok"}), patch(
+        "ui_media.character_image", side_effect=images.__getitem__
+    ):
+        at.run()
+
+    assert not at.exception
+    assert len(at.get("image")) == len(names)
+    assert [button.label for button in at.button if button.label in names] == names
+
+
+def test_catalog_layout_does_not_shrink_streamlit_columns_or_break_names():
+    source = (Path(__file__).resolve().parents[1] / "streamlit_app.py").read_text(encoding="utf-8")
+    catalog_css = source.split('[class*="st-key-catalog_grid_"]', 1)[1].split("</style>", 1)[0]
+    assert "display: grid" not in catalog_css
+    assert "overflow-wrap: anywhere" not in catalog_css
+    assert "object-fit: contain" in catalog_css
+
+
+def test_catalog_images_share_a_rendered_height_and_stay_centered_without_distortion():
+    source = (Path(__file__).resolve().parents[1] / "streamlit_app.py").read_text(encoding="utf-8")
+    catalog_css = source.split('[class*="st-key-catalog_image_"] img {', 1)[1].split("}", 1)[0]
+    assert "\n  height: 10.5rem !important" in catalog_css
+    assert "max-height:" not in catalog_css
+    assert "max-width: calc(100% - 1.5rem)" in catalog_css
+    assert "width: auto !important" in catalog_css
+    assert "object-fit: contain" in catalog_css
+    assert "object-position: center" in catalog_css
+    assert 'with st.container(key=f"catalog_image_{key}_{index}", horizontal_alignment="center")' in source
+    assert "st.image(source, width=\"content\")" in source
 
 
 @pytest.mark.parametrize("status", [401, 403, 404, 422, 429, 500, 502, 503, 504, 418])
@@ -289,7 +358,7 @@ def test_catalog_http_failure_is_safe_and_clears_stale_results(status):
     with patch("httpx.Client.get", return_value=httpx.Response(200, json={"status": "ok"},
                request=httpx.Request("GET", "http://test/health"))), patch("httpx.Client.post", return_value=response):
         at.run()
-        next(b for b in at.button if b.label == "Lihat katalog").click().run()
+        next(b for b in at.button if b.label == "Jelajahi Katalog").click().run()
     assert not at.exception
     assert not at.sidebar.warning
     assert len(at.warning) == 1
@@ -335,24 +404,86 @@ def test_composer_combines_text_and_attachment_and_locks_upload_when_typing():
         at.run()
         assert not at.exception and not at.tabs
         assert len(at.text_input) == 1
+        assert not at.text_input[0].disabled
         assert len(at.get("file_uploader")) == 1
         assert sum(b.label == "Kirim" for b in at.button) == 1
         at.text_input(key="text_question_0").input("Jelaskan Umar Maya").run()
+        assert not at.text_input[0].disabled
         assert at.get("file_uploader")[0].proto.disabled
-        next(b for b in at.button if b.label == "Hapus input").click().run()
+        at.text_input(key="text_question_0").input("").run()
         assert not at.get("file_uploader")[0].proto.disabled
         assert at.text_input[0].value == ""
 
 
-def test_empty_composer_never_sends_or_adds_history():
+def test_empty_composer_send_click_never_sends_or_adds_history():
     at = app_test()
     with patch("ui_client.request_api", return_value={"status": "ok"}), patch("ui_client.send_message") as send:
         at.run()
-        next(b for b in at.button if b.label == "Kirim").click().run()
+        send_button = next(b for b in at.button if b.label == "Kirim")
+        assert not send_button.proto.disabled
+        send_button.click().run()
     assert not at.exception
     send.assert_not_called()
     assert at.session_state["messages"] == []
-    assert len(at.warning) == 1
+    assert not at.warning
+
+
+def test_submit_clears_input_before_backend_and_holds_processing_lock():
+    import streamlit as st
+    at = app_test()
+
+    def respond(question, uploaded=None, **kwargs):
+        assert st.session_state.processing is True
+        assert st.session_state.text_generation == 1
+        assert st.session_state.text_question_1 == ""
+        assert len(st.session_state.messages) == 1
+        assert st.session_state.messages[0]["text"] == question
+        return "chat", {"answer": "Jawaban"}
+
+    with patch("ui_client.request_api", return_value={"status": "ok"}), patch(
+        "ui_client.send_message", side_effect=respond
+    ) as send:
+        at.run()
+        at.text_input[0].input("Wayang Sasak apaan si").run()
+        next(b for b in at.button if b.label == "Kirim").click().run()
+
+    send.assert_called_once()
+    assert len(at.session_state.messages) == 2
+    assert at.text_input[0].value == ""
+    assert at.session_state.processing is False
+    assert not next(b for b in at.button if b.label == "Kirim").proto.disabled
+    at.run()
+    send.assert_called_once()
+    assert len(at.session_state.messages) == 2
+
+
+def test_processing_state_disables_input_and_send_and_blocks_submission():
+    at = app_test()
+    with patch("ui_client.request_api", return_value={"status": "ok"}), patch(
+        "ui_client.send_message"
+    ) as send:
+        at.session_state["processing"] = True
+        at.session_state["text_question_0"] = "pesan duplikat"
+        at.run()
+        assert at.text_input[0].disabled
+        assert next(b for b in at.button if b.label == "Kirim").proto.disabled
+        assert any("Sedang memproses" in c.value for c in at.caption)
+
+    send.assert_not_called()
+    assert at.session_state.messages == []
+
+
+def test_enter_and_send_button_share_submit_path_with_repeat_guard():
+    source = (Path(__file__).resolve().parents[1] / "streamlit_app.py").read_text(encoding="utf-8")
+    enter_handler = source.split("parent.wayangEnterHandler = (event) => {", 1)[1].split("};", 1)[0]
+    assert "event.key !== 'Enter' || event.shiftKey || event.isComposing" in enter_handler
+    assert "if (parent.wayangSubmitPending) return" in enter_handler
+    assert "parent.wayangSubmitPending = true" in enter_handler
+    assert "button.click()" in enter_handler
+    assert "if submitted and not st.session_state.processing:" in source
+    assert "queue_action({\"kind\": \"question\", \"question\": text.strip()}, clear_text=True)" in source
+    assert "Hapus input" not in source
+    assert "latest.scrollIntoView({block: 'end', behavior: 'smooth'})" in source
 
 
 def test_unified_composer_clears_upload_before_next_text_message():
@@ -367,12 +498,15 @@ def test_unified_composer_clears_upload_before_next_text_message():
             at.run()
             next(b for b in at.button if b.label == "Kirim").click().run()
         assert not at.exception
-        send.assert_called_once_with("", upload)
+        send.assert_called_once()
+        assert send.call_args.args[0] == ""
+        assert send.call_args.args[1].getvalue() == upload.getvalue()
+        assert send.call_args.args[1].name == upload.name
         at.run()
         assert at.text_input[0].value == "" and not at.text_input[0].disabled
-        at.text_input[0].input("Jelaskan Umar Maya")
+        at.text_input[0].input("Jelaskan Umar Maya").run()
         next(b for b in at.button if b.label == "Kirim").click().run()
-        send.assert_called_with("Jelaskan Umar Maya", None)
+        send.assert_called_with("Jelaskan Umar Maya", None, message_id=ANY)
         assert not at.exception
         history = at.session_state["messages"]
         assert history[0]["image_bytes"] == upload.getvalue()
@@ -386,7 +520,7 @@ def test_composer_rejects_simultaneous_text_and_image():
     at = app_test()
     with patch("ui_client.request_api", return_value={"status": "ok"}), patch("ui_client.send_message") as send:
         at.run()
-        at.text_input[0].input("Jelaskan Umar Maya")
+        at.text_input[0].input("Jelaskan Umar Maya").run()
         with patch("streamlit.file_uploader", return_value=upload):
             next(b for b in at.button if b.label == "Kirim").click().run()
         assert not at.exception
@@ -395,7 +529,7 @@ def test_composer_rejects_simultaneous_text_and_image():
         send.assert_not_called()
 
 
-def test_selected_attachment_locks_text_and_clear_unlocks_it():
+def test_selected_attachment_locks_text_and_uploader_clear_unlocks_it():
     upload = BytesIO(b"image")
     upload.name, upload.size = "tokoh.png", 5
     at = app_test()
@@ -405,7 +539,8 @@ def test_selected_attachment_locks_text_and_clear_unlocks_it():
     ):
         at.run()
         assert not at.exception and at.text_input[0].disabled
-        next(b for b in at.button if b.label == "Hapus input").click().run()
+        at.session_state["image_upload_0"] = None
+        at.run()
         assert not at.exception and not at.text_input[0].disabled
         assert at.text_input[0].value == ""
 
@@ -426,23 +561,70 @@ def test_text_character_has_one_image_and_yes_opens_clickable_choices(tmp_path, 
         "ui_client.send_message", side_effect=[("chat", reply), ("chat", choices), ("chat", reply)]
     ) as send:
         at.run()
-        at.text_input(key="text_question_0").input("Umar Maya")
+        at.text_input(key="text_question_0").input("Umar Maya").run()
         next(b for b in at.button if b.label == "Kirim").click().run()
         assert not at.exception
         assert len(at.get("image")) == 1
         assert at.session_state["seen_ids"] == [1]
-        at.text_input(key="text_question_1").input("Ya")
+        at.text_input(key="text_question_1").input("Ya").run()
         next(b for b in at.button if b.label == "Kirim").click().run()
         assert not at.exception
-        send.assert_called_with("Ya", None, awaiting_more=True, seen_ids=[1])
+        send.assert_called_with("Ya", None, awaiting_more=True, seen_ids=[1], message_id=ANY)
         assert len(at.get("image")) == 1
         for name in ["Jayangrana", "Maktal", "Gunungan"]:
             assert sum(b.label == name for b in at.button) == 1
         next(b for b in at.button if b.label == "Maktal").click().run()
-        send.assert_called_with("Jelaskan Maktal", None, character_id=2)
+        send.assert_called_with("Jelaskan Maktal", None, character_id=2, message_id=ANY)
         assert not at.exception
         next(b for b in at.button if b.label == "Percakapan Baru").click().run()
         assert not at.session_state["seen_ids"] and not at.session_state["awaiting_more"]
+
+
+def test_selecting_recommendation_locks_only_that_group():
+    at = app_test()
+    choices = {"mode": "suggestions", "answer": "Pilih salah satu", "choices": [
+        {"id": i, "nama": name} for i, name in [(0, "Jayangrana"), (2, "Maktal"), (19, "Gunungan")]]}
+    next_choices = {"mode": "suggestions", "answer": "Pilih tokoh berikutnya", "choices": [
+        {"id": i, "nama": name} for i, name in [(3, "Taptanus"), (4, "Samtanus"), (5, "Selandir")]]}
+    reply = {"mode": "answer", "answer": "Profil Maktal", "character": {"id": 2, "nama": "Maktal"},
+             "follow_up": "Apakah Anda ingin tahu tokoh Wayang Sasak yang lain?"}
+    at.session_state["messages"] = [{"role": "assistant", "kind": "chat", "data": choices}]
+    with patch("ui_client.request_api", return_value={"status": "ok"}), patch(
+        "ui_client.send_message", side_effect=[("chat", reply), ("chat", next_choices)]
+    ) as send:
+        at.run()
+        assert len(at.text_input) == 1
+        next(button for button in at.button if button.label == "Maktal").click().run()
+        assert not at.exception
+        send.assert_any_call("Jelaskan Maktal", None, character_id=2, message_id=ANY)
+        assert not any(button.label in {"Jayangrana", "Maktal", "Gunungan"} for button in at.button)
+        assert at.session_state["recommendation_selections"]["message_0"] == 2
+        next(button for button in at.button if button.label == "Ya, kenalkan tokoh lain").click().run()
+        assert not at.exception
+        send.assert_any_call("Ya", None, awaiting_more=True, seen_ids=[2], message_id=ANY)
+        assert sum(button.label in {"Taptanus", "Samtanus", "Selandir"} for button in at.button) == 3
+        assert not any(button.label in {"Jayangrana", "Maktal", "Gunungan"} for button in at.button)
+        assert len(at.text_input) == 1 and send.call_count == 2
+        assert len(at.session_state["messages"]) == 5
+
+
+def test_chat_api_error_clears_old_followup_and_keeps_composer():
+    at = app_test()
+    at.session_state["awaiting_more"] = True
+    at.session_state["messages"] = [{"role": "assistant", "kind": "chat", "data": {
+        "mode": "answer", "answer": "Profil", "follow_up": "Ingin tokoh lain?"}}]
+    with patch("ui_client.request_api", return_value={"status": "ok"}), patch(
+        "ui_client.send_message", side_effect=BackendError("Offline")
+    ) as send:
+        at.run()
+        next(widget for widget in at.text_input if widget.label == "Pesan").input("Pertanyaan baru").run()
+        next(button for button in at.button if button.label == "Kirim").click().run()
+        assert not at.exception and send.call_count == 1
+        assert not at.session_state["awaiting_more"]
+        assert at.session_state["processing"] is False
+        assert not at.text_input[0].disabled
+        assert not any(button.label == "Ya, kenalkan tokoh lain" for button in at.button)
+        assert len(at.text_input) == 1
 
 
 def test_reference_image_rejects_traversal_and_missing_files(tmp_path, monkeypatch):

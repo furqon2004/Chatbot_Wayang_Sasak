@@ -102,7 +102,8 @@ def test_unavailable_search_does_not_break_catalog_or_prediction(settings, fake_
 def test_frontend_catalog_query_works_without_semantic_retrieval(settings, fake_resources):
     with TestClient(create_app(settings, lambda _: fake_resources, lambda *_: None)) as client:
         old_response = client.post("/search", json={"query": "daftar semua tokoh", "top_k": 3})
-        assert old_response.status_code == 503
+        assert old_response.status_code == 200
+        assert old_response.json()["mode"] == "catalog"
         response = client.post("/search", json={"query": "daftar tokoh", "top_k": 3})
     assert response.status_code == 200
     data = response.json()

@@ -1,0 +1,9 @@
+{
+  "mode": "answer",
+  "llm_status": "used",
+  "cache_hit": false,
+  "provider_requests": 1,
+  "rendered_narrative": "Jayangrana melambangkan raga manusia, yang berarti ia merupakan simbol atau representasi dari tubuh manusia. [1]",
+  "sources": [{"document": "wayang_db.json", "id": 0, "label": "jayangrana", "evidence_ids": ["profile:0:filosofi:0"]}],
+  "evidence": [{"evidence_id": "profile:0:filosofi:0", "text": "Jayangrana merupakan perlambangan raga manusia."}]
+}
