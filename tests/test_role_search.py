@@ -110,7 +110,8 @@ def test_overview_does_not_rewrite_into_role_search():
     service, provider = setup()
     service.retrieval.search = Mock(wraps=service.retrieval.search)
     reply = ask(service, "Apa itu Wayang Sasak?")
-    assert reply.mode == "conversation" and reply.character is None and reply.catalog is None
+    assert reply.mode == "web_answer" and reply.character is None and reply.catalog is None
+    assert reply.web_sources and "Serat Menak" in reply.answer
     service.retrieval.search.assert_called_once_with("Apa itu Wayang Sasak", 3)
     provider.select.assert_not_called()
 

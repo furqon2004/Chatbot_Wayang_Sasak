@@ -186,7 +186,7 @@ def local_overview_intent(query: str) -> str | None:
     if re.fullmatch(r"(?:pewayangan sasak|wayang sasak)(?: adalah| itu)?", value):
         return "overview"
     action = (
-        r"(?:(?:(?:coba|tolong) )?(?:apa itu|apa yang dimaksud(?: dengan)?|"
+        r"(?:(?:(?:coba|tolong) )?(?:apa(?: sih?)? itu|apa yang dimaksud(?: dengan)?|"
         r"jelaskan(?: (?:saya|aku))?|ceritakan(?: (?:saya|aku))?|penjelasan|berikan saya informasi|explain)|"
         r"(?:aku|saya) (?:ingin|mau) (?:tahu|mengenal))"
     )

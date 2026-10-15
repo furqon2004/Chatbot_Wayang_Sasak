@@ -15,6 +15,18 @@ from .query_normalizer import unsafe_evidence
 
 LOGGER = logging.getLogger(__name__)
 REQUEST_METER = ContextVar("provider_request_meter", default=None)
+
+
+def create_openai_client(settings):
+    import httpx
+    from openai import AsyncOpenAI
+
+    timeout = settings.llm_timeout_seconds
+    return AsyncOpenAI(api_key=settings.llm_api_key, base_url="https://api.openai.com/v1",
+        timeout=timeout, max_retries=0,
+        http_client=httpx.AsyncClient(timeout=timeout, trust_env=False))
+
+
 SYSTEM_INSTRUCTION = """Anda penyusun jawaban Wayang Sasak berbasis evidence sistem.
 Pahami permintaan dalam bahasa Indonesia formal maupun kasual, termasuk singkatan,
 typo ringan, dan pertanyaan lanjutan yang konteksnya sudah diselesaikan backend.
@@ -52,8 +64,6 @@ def error_category(exc: Exception) -> str:
 class ProviderClient:
     def __init__(self, settings: Settings, client=None, sleep=asyncio.sleep,
                  jitter=None, breaker=None, capacity=None, clock=time.monotonic):
-        from openai import AsyncOpenAI
-
         self.settings = settings
         self.sleep = sleep
         # Injected SDK defaults to deterministic scheduling; real SDK uses jitter.
@@ -65,9 +75,7 @@ class ProviderClient:
         from .web_cache import PublicWebCache
         self.web_cache = PublicWebCache(settings, clock)
         self.capacity = capacity or Capacity(1)
-        self.client = client or AsyncOpenAI(api_key=settings.llm_api_key,
-            base_url="https://api.openai.com/v1", timeout=settings.llm_timeout_seconds,
-            max_retries=0)
+        self.client = client or create_openai_client(settings)
 
     async def select(self, query: str, evidence: list[dict]) -> str:
         if not self.breaker.available():

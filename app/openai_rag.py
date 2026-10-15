@@ -6,7 +6,7 @@ import random
 import time
 
 from .chat_schemas import EvidenceSelection
-from .provider import ProviderFailure, REQUEST_METER, SYSTEM_INSTRUCTION, build_prompt
+from .provider import ProviderFailure, REQUEST_METER, SYSTEM_INSTRUCTION, build_prompt, create_openai_client
 from .security import Capacity, CircuitBreaker
 
 LOGGER = logging.getLogger(__name__)
@@ -45,15 +45,12 @@ class OpenAIRagClient:
     rag_provider = "openai"
 
     def __init__(self, settings, client=None, sleep=asyncio.sleep, clock=time.monotonic):
-        from openai import AsyncOpenAI
         self.settings = settings
         self.rag_model = settings.llm_model
         self.sleep, self.clock = sleep, clock
         self.breaker = CircuitBreaker(clock=clock)
         self.capacity = Capacity(1)
-        self.client = client or AsyncOpenAI(api_key=settings.llm_api_key,
-            base_url="https://api.openai.com/v1", max_retries=0,
-            timeout=settings.llm_timeout_seconds)
+        self.client = client or create_openai_client(settings)
 
     async def narrate(self, query, evidence, context):
         return await self.select(query, evidence, narrative_context=context)

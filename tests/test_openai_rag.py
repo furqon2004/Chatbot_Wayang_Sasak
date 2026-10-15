@@ -10,7 +10,7 @@ from openai import AsyncOpenAI
 
 from app.chat import ChatService
 from app.config import Settings
-from app.provider import ProviderFailure, REQUEST_METER
+from app.provider import ProviderClient, ProviderFailure, REQUEST_METER
 from app.llm import LLMRouter, load_llm
 from app.openai_rag import OpenAIRagClient
 from evaluation.mock_search import mock_service
@@ -38,6 +38,16 @@ def adapter(settings, handler):
     sdk = AsyncOpenAI(api_key=SECRET, max_retries=0,
                       http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)))
     return OpenAIRagClient(config(settings), client=sdk, sleep=AsyncMock())
+
+
+def test_default_openai_clients_ignore_system_proxy(settings):
+    async def run():
+        clients = [OpenAIRagClient(config(settings)), ProviderClient(config(settings))]
+        try:
+            assert all(client.client._client._trust_env is False for client in clients)
+        finally:
+            await asyncio.gather(*(client.close() for client in clients))
+    asyncio.run(run())
 
 
 def test_sdk_contract_and_success(settings):
@@ -308,9 +318,11 @@ def test_fastapi_default_loader_routes_openai_and_health_is_not_search_success(s
             "subject_ids": [rows[0]["id"]], "evidence_ids": [rows[0]["evidence_id"]]}]}
             if body["text"]["format"]["name"] == "evidence_narrative" else {"evidence_ids": [rows[0]["evidence_id"]]})
         return httpx.Response(200, json=response(json.dumps(raw)))
-    sdk_class = AsyncOpenAI
-    monkeypatch.setattr("openai.AsyncOpenAI", lambda **kw: sdk_class(**kw,
-        http_client=httpx.AsyncClient(transport=httpx.MockTransport(handle))))
+    def fake_client(configured):
+        return AsyncOpenAI(api_key=configured.llm_api_key, base_url="https://api.openai.com/v1",
+            max_retries=0, http_client=httpx.AsyncClient(transport=httpx.MockTransport(handle)))
+    monkeypatch.setattr("app.provider.create_openai_client", fake_client)
+    monkeypatch.setattr("app.openai_rag.create_openai_client", fake_client)
     retrieval = mock_service()
     retrieval.semantic.scores = lambda *_: {0: .99}
     fake_resources.characters = retrieval.catalog.characters

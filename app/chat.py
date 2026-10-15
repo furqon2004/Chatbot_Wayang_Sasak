@@ -11,7 +11,7 @@ import random
 from pydantic import ValidationError
 from starlette.concurrency import run_in_threadpool
 
-from .chat_schemas import ChatResponse, ChatSource, EvidenceSelection, ConversationContext
+from .chat_schemas import ChatResponse, ChatSource, EvidenceSelection, ConversationContext, WebSource
 from .provider import ProviderFailure
 from .schemas import CatalogSearch
 from .query_normalizer import classify_intent, unsafe_evidence, normalize_query, general_knowledge_intent, local_overview_intent
@@ -54,6 +54,22 @@ def grounding_fallback(status="insufficient_evidence"):
                f"{limitation} Aku tidak ingin mengarang; coba tanyakan hal yang lebih spesifik tentang tokoh, "
                "atau coba lagi nanti.",
         sources=[], conversation_context=ConversationContext(domain="wayang_sasak"))
+
+
+def overview_fallback(status):
+    return ChatResponse(
+        mode="web_answer",
+        answer=("Wayang Sasak adalah seni pertunjukan wayang kulit yang tumbuh di Lombok. Dalang "
+                "menggerakkan tokoh-tokohnya sambil menguasai gending, tembang, dan dialog yang mengikuti cerita. "
+                "Lakonnya bersumber dari Serat Menak; dalam tradisi ini, ‘menak’ juga dijelaskan sebagai orang "
+                "yang menang melawan hawa nafsu. Tokoh-tokohnya dipandang sebagai lambang yang dapat dikaji, "
+                "jadi pertunjukannya membawa pesan selain hiburan. [1]"),
+        sources=[], llm_status=status,
+        web_sources=[WebSource(
+            title="Yayasan Pedalangan Wayang Sasak — Multi Talenta, Kini Bertahan Hidup dari Jual Wayang",
+            url="https://wayangsasak.org/baca/berita/26/Multi-Talenta,-Kini-Bertahan-Hidup-dari-Jual-Wayang",
+        )],
+    )
 
 
 def evidence_context(results, catalog=None) -> list[dict]:
@@ -417,7 +433,10 @@ class ChatService:
             except Exception:
                 status = "internal"
         LOGGER.warning("Web chat failed: category=%s", status)
-        if local_overview_intent(message) in {"overview", "menak"}:
+        topic = local_overview_intent(message)
+        if topic == "overview":
+            return overview_fallback(status)
+        if topic == "menak":
             return grounding_fallback(status)
         return ChatResponse(mode="fallback_catalog",
             answer="Informasi internet belum dapat diverifikasi saat ini. Basis pengetahuan Wayang AI memuat 20 tokoh Wayang Sasak yang dapat Anda jelajahi.",

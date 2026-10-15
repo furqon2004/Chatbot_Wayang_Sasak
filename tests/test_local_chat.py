@@ -63,7 +63,8 @@ def test_web_failure_does_not_stop_local_narration(settings, fake_resources):
         retrieval_loader=lambda *_: NS(semantic=retrieval.semantic, close=lambda: None))
     with TestClient(app) as client:
         web = client.post("/chat", json={"message": "apa itu wayang sasak"}).json()
-        assert web["mode"] == "conversation" and not web["llm_used"] and not web.get("catalog")
+        assert web["mode"] == "web_answer" and not web["llm_used"] and not web.get("catalog")
+        assert "Serat Menak" in web["answer"] and web["web_sources"]
         local = client.post("/chat", json={"message": "Apa filosofi Jayangrana?"}).json()
         assert local["mode"] == "answer" and local["llm_used"] and local["sources"]
         assert calls == ["web", "rag"]

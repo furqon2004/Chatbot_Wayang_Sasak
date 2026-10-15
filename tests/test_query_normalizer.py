@@ -94,11 +94,11 @@ def test_explicit_catalog_requests_are_catalog_intents(query):
 
 
 @pytest.mark.parametrize("query", [
-    "apa itu wayang sasak", "wayang sasak itu apa", "wayang sasak apaan sih",
+    "apa itu wayang sasak", "wayang sasak itu apa", "wayang sasak apaan sih","apa si itu wayang sasak",
     "aku pengen tahu soal wayang sasak", "ceritain wayang sasak dong",
     "coba jelasin tentang wayang sasak", "wayng sasak itu apaan",
     "aku mau tau wayang sasak", "sebenarnya wayang sasak itu apa sih?",
-    "coba critain wayng sasak",
+    "coba critain wayng sasak","apa sih itu Wayang Sasak?","apa sih itu Wayang Sasak",
 ])
 def test_semantic_overview_variants_have_one_intent(query):
     from app.query_normalizer import classify_intent, general_knowledge_intent

@@ -216,6 +216,9 @@ st.html("""
 <style>
 [data-testid="stMainBlockContainer"] { max-width: 52rem; padding-bottom: 10rem; }
 [data-testid="stChatMessage"] { max-width: 52rem; margin-inline: auto; padding-block: .3rem; }
+[data-testid="stChatMessage"]:has([class*="st-key-chat_user_bubble_"]) {
+  flex-direction: row-reverse;
+}
 [class*="st-key-chat_user_bubble_"] {
   margin-left: auto; width: fit-content; max-width: 82%;
   padding: .65rem .9rem; border-radius: 1.1rem;
@@ -271,22 +274,26 @@ def render_user_message(message, index):
 
 
 message_count = len(st.session_state.messages)
-if message_count and st.session_state.get("last_scrolled_message_count") != message_count:
-    st.session_state["last_scrolled_message_count"] = message_count
+if message_count:
     components.html("""
     <script>
     const doc = window.parent.document;
-    const scroll = () => {
-      const main = doc.querySelector('[data-testid="stMain"]');
-      if (!main) return;
-      const latest = main.querySelector('[data-testid="stChatMessage"]:last-of-type');
-      if (latest) latest.scrollIntoView({block: 'end', behavior: 'smooth'});
-      main.scrollTo({top: main.scrollHeight, behavior: 'smooth'});
-    };
-    setTimeout(scroll, 150);
-    setTimeout(scroll, 600);
+    const parent = window.parent;
+    const count = __MESSAGE_COUNT__;
+    if (parent.wayangLastScrolledMessageCount !== count) {
+      parent.wayangLastScrolledMessageCount = count;
+      const scroll = () => {
+        const main = doc.querySelector('[data-testid="stMain"]');
+        if (!main) return;
+        const latest = main.querySelector('[data-testid="stChatMessage"]:last-of-type');
+        if (latest) latest.scrollIntoView({block: 'end', behavior: 'smooth'});
+        main.scrollTo({top: main.scrollHeight, behavior: 'smooth'});
+      };
+      setTimeout(scroll, 150);
+      setTimeout(scroll, 600);
+    }
     </script>
-    """, height=0)
+    """.replace("__MESSAGE_COUNT__", str(message_count)), height=0)
 if not st.session_state.messages:
     with st.container(horizontal_alignment="center", gap="medium"):
         st.markdown("# :yellow[◇ ◆ ◇]", width="content")

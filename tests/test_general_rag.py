@@ -74,10 +74,14 @@ def test_sufficient_direct_evidence_uses_rag_cache_and_exact_source(query):
 def test_character_evidence_never_becomes_overview(query, text):
     service, provider, _ = service_with(text)
     reply = asyncio.run(service.chat(query))
-    assert reply.mode == "conversation" and reply.catalog is None
     assert reply.llm_status == "unavailable"
-    assert "Pencarian web belum dapat diverifikasi" in reply.answer
-    assert text not in reply.answer and not reply.web_sources
+    assert reply.catalog is None and text not in reply.answer
+    if local_overview_intent(query) == "overview":
+        assert reply.mode == "web_answer" and reply.web_sources
+        assert "Serat Menak" in reply.answer
+    else:
+        assert reply.mode == "conversation" and not reply.web_sources
+        assert "Pencarian web belum dapat diverifikasi" in reply.answer
     assert not service.rag_cache.entries
     provider.select.assert_not_called()
     provider.search.assert_awaited_once_with(query)
@@ -91,8 +95,9 @@ def test_llm_cannot_add_claims_or_cache_invalid_output(response):
     provider.select.side_effect = None
     provider.select.return_value = response
     reply = asyncio.run(service.chat(QUERIES[0]))
-    assert reply.mode == "conversation" or reply.answer == DEFINITION
+    assert reply.mode == "web_answer" and reply.web_sources
     assert reply.catalog is None
+    assert "Serat Menak" in reply.answer
     assert "Klaim baru" not in reply.answer
     assert not service.rag_cache.entries
     provider.search.assert_awaited_once_with(QUERIES[0])
@@ -102,7 +107,8 @@ def test_unavailable_retrieval_uses_web_fallback():
     service, provider, _ = service_with(DEFINITION)
     service.retrieval.search.side_effect = RetrievalUnavailable()
     reply = asyncio.run(service.chat(QUERIES[0]))
-    assert reply.mode == "conversation" and reply.catalog is None
+    assert reply.mode == "web_answer" and reply.catalog is None
+    assert reply.web_sources and "Serat Menak" in reply.answer
     provider.search.assert_awaited_once_with(QUERIES[0])
 
 
@@ -113,7 +119,8 @@ def test_low_scoring_direct_evidence_does_not_bypass_threshold():
     service.retrieval.search.side_effect = None
     service.retrieval.search.return_value = result
     reply = asyncio.run(service.chat(QUERIES[0]))
-    assert reply.mode == "conversation" and reply.catalog is None
+    assert reply.mode == "web_answer" and reply.catalog is None
+    assert reply.web_sources and "Serat Menak" in reply.answer
     provider.select.assert_not_called()
     provider.search.assert_awaited_once_with(QUERIES[0])
 
@@ -123,7 +130,8 @@ def test_changed_evidence_invalidates_general_cache():
     asyncio.run(service.chat(QUERIES[0]))
     service.retrieval.catalog.profiles[0]["deskripsi"] = "Jayangrana adalah tokoh Wayang Sasak."
     reply = asyncio.run(service.chat(QUERIES[0]))
-    assert reply.mode == "conversation" and reply.catalog is None
+    assert reply.mode == "web_answer" and reply.catalog is None
+    assert reply.web_sources and "Serat Menak" in reply.answer
     assert provider.select.await_count == 1
     provider.search.assert_awaited_once_with(QUERIES[0])
 
@@ -211,7 +219,7 @@ def test_missing_overview_uses_grounded_web_without_local_generation(query):
     "aku pengen tahu soal wayang sasak", "ceritain wayang sasak dong",
     "coba jelasin tentang wayang sasak", "wayng sasak itu apaan",
     "aku mau tau wayang sasak", "sebenarnya wayang sasak itu apa sih?",
-    "coba critain wayng sasak",
+    "coba critain wayng sasak","apa sih itu Wayang Sasak","apa sih itu Wayang Sasak ?",
 ])
 def test_semantic_overview_variants_use_one_local_retrieval_query(query):
     service, provider, _ = service_with(DEFINITION)
@@ -257,7 +265,7 @@ def test_out_of_scope_request_gets_notice_and_catalog_without_retrieval():
     provider.search.assert_not_called()
 
 
-@pytest.mark.parametrize("query", ["apa itu wayang sasak", "wayang sasak itu apa"])
+@pytest.mark.parametrize("query", ["apa itu wayang sasak", "wayang sasak itu apa","wayang sasak apaan sih","wayang sasak itu apaan?"])
 def test_overview_variants_use_web_when_local_retrieval_is_unavailable(query):
     service, provider, _ = service_with(DEFINITION)
     service.retrieval.search.side_effect = RetrievalUnavailable()
@@ -272,7 +280,7 @@ def test_overview_variants_use_web_when_local_retrieval_is_unavailable(query):
     provider.search.assert_awaited_once_with(query)
 
 
-@pytest.mark.parametrize("query", ["apa itu wayang sasak", "wayang sasak itu apa"])
+@pytest.mark.parametrize("query", ["apa itu wayang sasak", "wayang sasak itu apa","wayang sasak apaan sih","wayang sasak itu apaan?"])
 def test_overview_variants_use_web_when_local_evidence_is_insufficient(query):
     service, provider, _ = service_with("Jayangrana adalah tokoh utama Wayang Sasak.")
     provider.search.side_effect = None
@@ -288,13 +296,14 @@ def test_overview_variants_use_web_when_local_evidence_is_insufficient(query):
 
 @pytest.mark.parametrize("query", ["Wayang Sasak itu apa", "Jelaskan soal Wayang Sasak",
                                    "Jelasin gw tentang Wayang Sasak"])
-def test_overview_without_local_or_web_evidence_does_not_show_catalog(query):
+def test_overview_without_local_or_web_evidence_uses_curated_fallback(query):
     service, _, _ = service_with("Jayangrana adalah tokoh utama Wayang Sasak.")
     service.provider = None
 
     reply = asyncio.run(service.chat(query))
 
-    assert reply.mode == "conversation" and reply.llm_status == "not_configured"
+    assert reply.mode == "web_answer" and reply.llm_status == "not_configured"
     assert reply.catalog is None
-    assert "belum menemukan sumber" in reply.answer.casefold()
-    assert "tidak ingin mengarang" in reply.answer.casefold()
+    assert "wayang sasak adalah seni pertunjukan wayang kulit yang tumbuh di lombok" in reply.answer.casefold()
+    assert "serat menak" in reply.answer.casefold()
+    assert reply.web_sources[0].url == "https://wayangsasak.org/baca/berita/26/Multi-Talenta,-Kini-Bertahan-Hidup-dari-Jual-Wayang"
