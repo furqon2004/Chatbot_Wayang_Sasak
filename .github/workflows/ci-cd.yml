@@ -1,0 +1,134 @@
+name: CI and VPS deployment
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: Deploy to the configured production VPS after checks pass
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  checks:
+    uses: ./.github/workflows/security.yml
+    with:
+      dependency_audit: true
+
+  pull-request-image:
+    if: github.event_name == 'pull_request'
+    needs: checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build and check the runtime image
+        run: |
+          cp deploy/vps.env.example .env.docker
+          docker compose config --quiet
+          docker build --tag wayang-sasak:ci .
+          docker run --rm --entrypoint python wayang-sasak:ci -m pip check
+
+  publish:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.push.outputs.image }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build and check the runtime image
+        id: build
+        run: |
+          cp deploy/vps.env.example .env.docker
+          docker compose config --quiet
+          image="ghcr.io/${GITHUB_REPOSITORY,,}:${GITHUB_SHA}"
+          docker build --tag "$image" \
+            --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
+            --label "org.opencontainers.image.revision=$GITHUB_SHA" .
+          docker run --rm --entrypoint python "$image" -m pip check
+          printf 'tag=%s\n' "$image" >> "$GITHUB_OUTPUT"
+      - name: Sign in to GHCR
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+        run: printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+      - name: Publish the commit image and record its digest
+        id: push
+        env:
+          IMAGE_TAG: ${{ steps.build.outputs.tag }}
+        run: |
+          docker push "$IMAGE_TAG"
+          image=$(docker image inspect --format '{{index .RepoDigests 0}}' "$IMAGE_TAG")
+          printf 'image=%s\n' "$image" >> "$GITHUB_OUTPUT"
+      - name: Remove registry credentials
+        if: always()
+        run: docker logout ghcr.io
+
+  deploy:
+    needs: publish
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      vars.ENABLE_VPS_DEPLOY == 'true' &&
+      (github.event_name == 'push' ||
+       (github.event_name == 'workflow_dispatch' && inputs.deploy == true))
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    concurrency:
+      group: production-vps
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Deploy the verified image through SSH
+        shell: bash
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_PRIVATE_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+          VPS_PORT: ${{ vars.VPS_PORT || '22' }}
+          DEPLOY_PATH: ${{ vars.VPS_DEPLOY_PATH || '/opt/wayang-sasak' }}
+          IMAGE: ${{ needs.publish.outputs.image }}
+        run: |
+          set -euo pipefail
+          [[ "$VPS_HOST" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]*$ ]]
+          [[ "$VPS_USER" =~ ^[a-zA-Z_][a-zA-Z0-9_-]*$ ]]
+          [[ "$VPS_PORT" =~ ^[0-9]{1,5}$ ]]
+          ((10#$VPS_PORT >= 1 && 10#$VPS_PORT <= 65535))
+          [[ "$DEPLOY_PATH" =~ ^/[a-zA-Z0-9_./-]+$ && "$DEPLOY_PATH" != / ]]
+          [[ "$DEPLOY_PATH" != *"//"* ]]
+          [[ "/${DEPLOY_PATH#/}/" != *"/../"* && "/${DEPLOY_PATH#/}/" != *"/./"* ]]
+          [[ "$IMAGE" =~ ^ghcr\.io/[a-z0-9_./-]+@sha256:[a-f0-9]{64}$ ]]
+          [[ -n "$VPS_SSH_PRIVATE_KEY" && -n "$VPS_KNOWN_HOSTS" ]]
+          umask 077
+          key_file="$RUNNER_TEMP/wayang-vps-key"
+          hosts_file="$RUNNER_TEMP/wayang-vps-known-hosts"
+          trap 'rm -f -- "$key_file" "$hosts_file"' EXIT
+          printf '%s\n' "$VPS_SSH_PRIVATE_KEY" > "$key_file"
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > "$hosts_file"
+          options=(-i "$key_file" -o BatchMode=yes -o StrictHostKeyChecking=yes
+            -o "UserKnownHostsFile=$hosts_file" -o ConnectTimeout=15)
+          ssh "${options[@]}" -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" "test -d '$DEPLOY_PATH'"
+          scp "${options[@]}" -P "$VPS_PORT" compose.yaml "$VPS_USER@$VPS_HOST:$DEPLOY_PATH/compose.pending.yaml"
+          ssh "${options[@]}" -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" \
+            "bash -s -- '$DEPLOY_PATH' '$IMAGE'" < scripts/deploy_vps.sh

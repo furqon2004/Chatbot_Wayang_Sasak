@@ -192,6 +192,11 @@ firewall/provider. Port 8000 tetap internal; port 8501 tetap loopback. Perhatika
 
 ## 6. Syarat go-live
 
+Jika deployment sudah dikelola GitHub Actions, gunakan
+`docker compose --env-file .env.image` untuk perintah manual agar image release
+tetap sesuai digest yang tercatat. Setup Secrets dan aktivasi pipeline dijelaskan
+di [panduan CI/CD](cicd.md).
+
 - Artefak terpercaya dan loader production berhasil; baseline 48/cosine terjaga.
 - Image Linux dibangun, diuji, diaudit dependency-nya, lalu dikunci untuk rilis.
 - Temuan advisory baru dan jalur decoder UI ditinjau/remediasi.

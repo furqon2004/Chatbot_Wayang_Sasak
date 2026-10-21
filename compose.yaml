@@ -1,7 +1,7 @@
 services:
   app:
     build: .
-    image: wayang-sasak
+    image: ${WAYANG_IMAGE:-wayang-sasak}
     mem_limit: 1g
     memswap_limit: 1g
     init: true

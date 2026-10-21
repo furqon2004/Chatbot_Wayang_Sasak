@@ -146,6 +146,8 @@ bahwa model asli beserta UI dapat berjalan stabil pada batas ini.
 Lihat [hasil audit deployment](docs/deployment-audit.md) dan
 [panduan VPS Ubuntu](docs/vps-deployment.md) untuk artefak, environment production,
 pengukuran RAM, serta konfigurasi reverse proxy.
+Untuk CI/CD melalui GitHub Actions dan deployment SSH, lihat
+[konfigurasi CI/CD repository publik](docs/cicd.md).
 
 ## Pengujian lokal
 
