@@ -44,6 +44,15 @@ def test_informal_character_question():
     assert classify_intent(query, mock_service().catalog).intent == "allowed"
 
 
+def test_known_jayangrana_spelling_resolves_to_catalog_character():
+    from app.conversation import named_ids
+    from evaluation.mock_search import mock_service
+
+    catalog = mock_service().catalog
+    assert normalize_query("Jayagrana") == "jayangrana"
+    assert named_ids("Jelaskan Jayagrana", catalog) == [0]
+
+
 def test_aliases_only_replace_whole_tokens():
     assert normalize_query("syair nurswan123") == "syair nurswan123"
 
@@ -131,6 +140,26 @@ def test_casual_gw_overview_uses_general_explanation_intent():
     decision = classify_intent(query, mock_service().catalog)
     assert decision.intent == "allowed"
     assert local_overview_intent(query) == "overview"
+
+
+@pytest.mark.parametrize("query", [
+    "Wayang Sasak dari daerah mana?",
+    "Wayang Sasak berasal dari wilayah mana?",
+    "Dari mana asal Wayang Sasak?",
+])
+def test_wayang_origin_question_is_an_overview(query):
+    from app.query_normalizer import local_overview_intent
+
+    assert local_overview_intent(query) == "overview"
+
+
+def test_wayang_in_lombok_wording_is_in_domain():
+    from app.query_normalizer import classify_intent
+    from evaluation.mock_search import mock_service
+
+    decision = classify_intent("sejarah masuknya wayang di lombok itu gimana", mock_service().catalog)
+
+    assert decision.intent == "allowed" and decision.domain_relevant
 
 
 def test_mixed_request_extracts_wayang_overview_for_retrieval():

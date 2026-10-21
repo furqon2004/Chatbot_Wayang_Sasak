@@ -15,6 +15,7 @@ QUERY_ALIASES = {
     "nurswan": "nursiwan", "gmn": "bagaimana", "gimana": "bagaimana",
     "yg": "yang", "tau": "tahu", "pengen": "ingin",
     "critain": "ceritakan", "ceritain": "ceritakan", "jelasin": "jelaskan",
+    "jayagrana": "jayangrana",
     "apaan": "apa", "ngenalin": "mengenali",
 }
 
@@ -100,7 +101,9 @@ def classify_intent(query: str, catalog) -> IntentDecision:
     names += [normalize_query(item.label) for item in catalog.items]
     def domain(part):
         value = normalize_query(part)
-        return bool(re.search(r"\b(?:wayang sasak|pewayangan sasak|serat menak|cerita menak|jayagrana|gununggan)\b", value)
+        return bool(re.search(
+                    r"\b(?:wayang sasak|pewayangan sasak|serat menak|cerita menak|jayagrana|gununggan|"
+                    r"(?:wayang(?: kulit)?|pewayangan)(?: di)?(?: pulau)? lombok)\b", value)
                     or re.fullmatch(
                         r"(?:tokoh|karakter) (?:yang )?(?:utama(?:nya)?|licik|jahat|baik|bijaksana|cerdik|"
                     r"kuat|sakti|paling kuat|paling sakti|paling penting)"
@@ -185,12 +188,16 @@ def local_overview_intent(query: str) -> str | None:
         return None
     if re.fullmatch(r"(?:pewayangan sasak|wayang sasak)(?: adalah| itu)?", value):
         return "overview"
+    if "wayang sasak" in value and re.search(
+        r"\b(?:dari (?:daerah |wilayah )?mana|dari mana asal|di (?:daerah |wilayah )?mana)\b", value
+    ):
+        return "overview"
     action = (
         r"(?:(?:(?:coba|tolong) )?(?:apa(?: sih?)? itu|apa yang dimaksud(?: dengan)?|"
         r"jelaskan(?: (?:saya|aku))?|ceritakan(?: (?:saya|aku))?|penjelasan|berikan saya informasi|explain)|"
         r"(?:aku|saya) (?:ingin|mau) (?:tahu|mengenal))"
     )
-    if re.fullmatch(action + r"(?: lebih banyak)?(?: tentang| mengenai| soal)? wayang sasak(?: ya| dong| sih)?", value):
+    if re.search(action + r"(?: lebih banyak)?(?: tentang| mengenai| soal)? wayang sasak(?: ya| dong| sih)?", value):
         return "overview"
     if re.fullmatch(r"(?:(?:sebenarnya|jadi) )?wayang sasak (?:(?:itu )?apa(?: sih)?|apa)", value):
         return "overview"

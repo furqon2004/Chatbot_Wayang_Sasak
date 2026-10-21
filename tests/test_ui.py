@@ -109,7 +109,7 @@ def test_prediction_rendering_including_null_identity(status):
         assert "Filosofi:" in rendered and "Nilai keberanian" in rendered
         assert "Apakah Anda ingin tahu tokoh Wayang Sasak yang lain?" in rendered
         assert not at.expander
-        assert "Confidence:" in rendered and "Margin:" in rendered
+        assert "Confidence:" not in rendered and "Margin:" not in rendered
     else:
         assert "Wayang AI belum cukup yakin untuk menetapkan satu tokoh." in at.warning[0].value
         assert "Dugaan terdekat: Jayengrana (80.0%)." in rendered
@@ -125,7 +125,7 @@ def test_prediction_rendering_including_null_identity(status):
         assert at.expander[0].label == "Detail keyakinan model"
         assert not at.expander[0].proto.expanded
         assert [item.value for item in at.expander[0].text] == [
-            "Confidence: 0.8", "Margin: 0.3", "Alasan rejection: low_confidence"]
+            "Alasan rejection: low_confidence"]
 
 
 @pytest.mark.parametrize("candidate_count", [0, 1, 3, 4])

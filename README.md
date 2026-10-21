@@ -69,15 +69,16 @@ pip install -r requirements.txt
 uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
-Default produksi tidak berubah:
+Default model lokal menunjuk ke `artifacts/model_clip_b32_bab4_early_stopping`.
+Untuk deployment Google Colab, arahkan `WAYANG_MODEL_DIR` ke folder model yang
+tersimpan di Drive. Default knowledge base tetap:
 
-- model: `/content/drive/MyDrive/skripsi_wayang/model_clip_b32_terbaik`
 - knowledge base: `/content/drive/MyDrive/skripsi_wayang/wayang_db.json`
 
 Override opsional untuk test/deployment lain:
 
 ```bash
-export WAYANG_MODEL_DIR=/path/ke/model_clip_b32_terbaik
+export WAYANG_MODEL_DIR=/path/ke/model_clip_b32_bab4_early_stopping
 export WAYANG_DB_PATH=/path/ke/wayang_db.json
 export WAYANG_MAX_UPLOAD_BYTES=10485760
 ```
@@ -93,10 +94,10 @@ logits_scaled = logits_raw / temperature
 probabilities = torch.softmax(logits_scaled, dim=-1)
 ```
 
-Temperature selalu dibaca dari `model_config.json` (nilai model aktif saat
-dokumentasi ini ditulis: `0.21597230434417725`). Backend tidak memiliki mode
-perkalian dan tidak memakai `SUPCON_TEMPERATURE=0.10`, karena nilai tersebut
-hanya digunakan oleh supervised contrastive loss saat training.
+Temperature dibaca dari `model_config.json`. Jika nilainya `null` karena belum
+dikalibrasi, backend memakai `1.0`. Backend tidak memakai
+`SUPCON_TEMPERATURE=0.10`, karena nilai tersebut hanya digunakan oleh
+supervised contrastive loss saat training.
 
 ## Pemakaian API
 

@@ -147,7 +147,11 @@ class Settings:
             model_dir=Path(
                 os.getenv(
                     "WAYANG_MODEL_DIR",
-                    str(DEFAULT_ROOT / "model_clip_b32_terbaik"),
+                    str(
+                        Path(__file__).resolve().parents[1]
+                        / "artifacts"
+                        / "model_clip_b32_bab4_early_stopping"
+                    ),
                 )
             ),
             knowledge_base_path=Path(

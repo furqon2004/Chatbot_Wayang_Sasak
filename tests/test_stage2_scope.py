@@ -54,7 +54,7 @@ def test_http_search_with_mock_collection_and_embedder(settings, fake_resources)
         assert calls == []  # Intent katalog melewati encode/query collection.
         payload = client.post("/search", json={"query": "Jelaskan Jayagrana"}).json()
         assert_search_payload(payload, {"mode": "answer", "id": 0}, catalog)
-        assert calls == [["jelaskan jayagrana"]]
+        assert calls == [["jelaskan jayangrana"]]
 
 
 def test_fuzzy_keyword_boost_is_bounded_and_ignores_random_tokens():

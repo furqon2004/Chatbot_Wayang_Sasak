@@ -82,15 +82,13 @@ allowed hosts, dan validasi artefak pada [security hardening](security-hardening
 Restart service setelah perubahan konfigurasi. Jangan memasukkan credential,
 file `.env`, atau bobot ke Git. `.env.example` hanya contoh aman.
 
-Model epoch V2 merupakan artefak deployment **eksternal**: frozen CLIP ViT-B/32
-+ PyTorch Linear(512, 20), best epoch 36, temperature terkalibrasi
-0.21667946182402853 dari artefak. Tidak ada perubahan temperature, bobot,
-label mapping, dataset, JSON, ChromaDB, retrieval, atau artefak Drive.
-Metrik validasi yang diberikan untuk model: source-aggregated accuracy 0.95 /
-macro-F1 0.9333; original-only 0.90 / 0.90; seluruh view 0.8833 / 0.8810.
-Ini metrik model sebelum evaluasi guard, bukan pengukuran rejection/OOD atau
-jaminan performa subset accepted. Pengujian kode memakai mock lokal deterministik,
-tanpa jaringan, Gemini, Hugging Face, atau artefak Drive sebenarnya.
+Model aktif `model_clip_b32_bab4_early_stopping` menggunakan frozen CLIP
+ViT-B/32 dan PyTorch Linear(512, 20), dengan best epoch 120. Artefak ini belum
+memiliki temperature terkalibrasi (`temperature: null`), sehingga backend memakai
+1.0. Loader menyelaraskan urutan kelas artifact ke ID tokoh resmi dan menerapkan
+padding putih persegi sesuai metadata preprocessing model. Angka validasi pada
+konfigurasi artifact adalah sebelum evaluasi guard, bukan pengukuran rejection/OOD
+atau jaminan performa subset accepted.
 
 ## Residual risk dan observabilitas
 

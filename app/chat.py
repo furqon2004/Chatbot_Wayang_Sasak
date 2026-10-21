@@ -380,7 +380,8 @@ class ChatService:
             if decision.scope_notice:
                 reply.scope_notice = decision.scope_notice
             return reply
-        if not named_character and (general_knowledge_intent(query) or story_question):
+        if not named_character and (general_knowledge_intent(query) or story_question
+                                    or (decision.domain_relevant and decision.semantic_intent != "CATALOG_REQUEST")):
             reply = await self._answer(decision.query, original_message=original_message or message,
                                        overview_topic="general", resolved_context=resolved_context)
             if decision.scope_notice:

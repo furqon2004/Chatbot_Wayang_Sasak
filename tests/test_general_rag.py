@@ -294,8 +294,52 @@ def test_overview_variants_use_web_when_local_evidence_is_insufficient(query):
     provider.search.assert_awaited_once_with(query)
 
 
+def test_overview_with_personal_intro_uses_web_when_local_evidence_is_insufficient():
+    query = "Aku adalah seorang pegiat seni aku mau tau tentang wayang sasak"
+    service, provider, _ = service_with("Jayangrana adalah tokoh utama Wayang Sasak.")
+    provider.search.side_effect = None
+    provider.search.return_value = ("Penjelasan bersumber [1]",
+        [WebSource(title="Sumber fixture", url="https://example.org/budaya")], None)
+
+    reply = asyncio.run(service.chat(query))
+
+    assert reply.mode == "web_answer" and reply.web_sources[0].url == "https://example.org/budaya"
+    service.retrieval.search.assert_called_once_with("Apa itu Wayang Sasak", 3)
+    provider.search.assert_awaited_once_with(query)
+
+
+def test_arbitrary_wayang_topic_uses_web_when_local_retrieval_is_unavailable():
+    query = "Saya tertarik untuk mengenal kebudayaan Wayang Sasak"
+    from app.query_normalizer import general_knowledge_intent, local_overview_intent
+    assert local_overview_intent(query) is None and not general_knowledge_intent(query)
+    service, provider, _ = service_with("Jayangrana adalah tokoh utama Wayang Sasak.")
+    service.retrieval.search.side_effect = RetrievalUnavailable()
+    provider.search.side_effect = None
+    provider.search.return_value = ("Penjelasan bersumber [1]",
+        [WebSource(title="Sumber fixture", url="https://example.org/budaya")], None)
+
+    reply = asyncio.run(service.chat(query))
+
+    assert reply.mode == "web_answer" and reply.web_sources[0].url == "https://example.org/budaya"
+    provider.search.assert_awaited_once_with(query)
+
+
+def test_lombok_wayang_history_uses_web_when_local_retrieval_is_unavailable():
+    query = "sejarah masuknya wayang di lombok itu gimana"
+    service, provider, _ = service_with("Jayangrana adalah tokoh utama Wayang Sasak.")
+    service.retrieval.search.side_effect = RetrievalUnavailable()
+    provider.search.side_effect = None
+    provider.search.return_value = ("Wayang Sasak berkembang di Lombok [1]",
+        [WebSource(title="Museum Negeri NTB", url="https://example.org/wayang")], None)
+
+    reply = asyncio.run(service.chat(query))
+
+    assert reply.mode == "web_answer" and reply.web_sources[0].title == "Museum Negeri NTB"
+    provider.search.assert_awaited_once_with(query)
+
+
 @pytest.mark.parametrize("query", ["Wayang Sasak itu apa", "Jelaskan soal Wayang Sasak",
-                                   "Jelasin gw tentang Wayang Sasak"])
+                                   "Jelasin gw tentang Wayang Sasak", "Wayang Sasak dari daerah mana?"])
 def test_overview_without_local_or_web_evidence_uses_curated_fallback(query):
     service, _, _ = service_with("Jayangrana adalah tokoh utama Wayang Sasak.")
     service.provider = None

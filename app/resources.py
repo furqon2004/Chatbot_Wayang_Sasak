@@ -117,10 +117,10 @@ def parse_label_mapping(raw: Any) -> dict[int, str]:
     else:
         raise ResourceValidationError("label_mapping.json harus berupa object atau array")
 
-    expected = dict(enumerate(OFFICIAL_LABELS))
-    if parsed != expected:
+    if (set(parsed) != set(range(NUM_CLASSES))
+            or set(parsed.values()) != set(OFFICIAL_LABELS)):
         raise ResourceValidationError(
-            "label_mapping.json harus memuat tepat ID 0-19 dalam urutan label resmi"
+            "label_mapping.json harus memuat tepat 20 label resmi dengan ID 0-19"
         )
     return parsed
 
@@ -170,12 +170,14 @@ def parse_knowledge_base(raw: Any, labels: dict[int, str]) -> dict[int, dict[str
 def parse_temperature(model_config: Any) -> float:
     if not isinstance(model_config, dict):
         raise ResourceValidationError("model_config.json harus berupa object")
-    try:
-        temperature = float(model_config["temperature"])
-    except KeyError as exc:
+    if "temperature" not in model_config:
         raise ResourceValidationError(
             "Field temperature tidak ada di model_config.json"
-        ) from exc
+        )
+    if model_config["temperature"] is None:
+        return 1.0
+    try:
+        temperature = float(model_config["temperature"])
     except (TypeError, ValueError) as exc:
         raise ResourceValidationError("Temperature model harus berupa angka") from exc
     if not math.isfinite(temperature) or temperature <= 0:
@@ -221,9 +223,10 @@ def _validate_encoder_config(vision_encoder: nn.Module) -> None:
 
 def load_resources(settings: Settings) -> ModelResources:
     validate_required_artifacts(settings)
-    labels = parse_label_mapping(
+    artifact_labels = parse_label_mapping(
         _read_json(settings.model_dir / "label_mapping.json")
     )
+    labels = dict(enumerate(OFFICIAL_LABELS))
     model_config = _read_json(settings.model_dir / "model_config.json")
     temperature = parse_temperature(model_config)
     characters = parse_knowledge_base(
@@ -240,13 +243,24 @@ def load_resources(settings: Settings) -> ModelResources:
         image_processor = CLIPImageProcessor.from_pretrained(
             str(settings.model_dir / "image_processor"), local_files_only=True
         )
+        if model_config.get("resize_mode") == "aspect_ratio_preserving_white_padding":
+            image_processor.do_resize = False
+            image_processor.do_center_crop = False
         checkpoint = torch.load(
             settings.model_dir / "classifier_head.pt",
             map_location="cpu",
             weights_only=True,
         )
         classifier = nn.Linear(EMBEDDING_DIM, NUM_CLASSES)
-        classifier.load_state_dict(classifier_state(checkpoint), strict=True)
+        state = classifier_state(checkpoint)
+        artifact_ids = {label: class_id for class_id, label in artifact_labels.items()}
+        order = torch.tensor(
+            [artifact_ids[label] for label in OFFICIAL_LABELS], dtype=torch.long
+        )
+        classifier.load_state_dict(
+            {key: value.index_select(0, order) for key, value in state.items()},
+            strict=True,
+        )
         vision_encoder.to(device).eval()
         classifier.to(device).eval()
     except ResourceValidationError:

@@ -96,7 +96,6 @@ def render(kind, data, key="response"):
             st.markdown(f"Gambar yang kamu kirim adalah tokoh Wayang Sasak **{escaped_name}**.")
             details = data.get("profil") or {}
             st.caption(f"Label: {identity.get('label') or name}")
-            st.text(f"Confidence: {data.get('confidence', 0):.1%} ? Margin: {data.get('margin', 0):.1%}")
             if details.get("ciri_ciri"):
                 st.text(f"Ciri-ciri {name}:")
                 st.text(details["ciri_ciri"])
@@ -130,8 +129,6 @@ def render(kind, data, key="response"):
                 st.text("Daftar kandidat belum tersedia pada respons ini.")
             st.text("Unggah gambar yang lebih terang dan tajam, menampilkan satu tokoh dengan seluruh tubuh terlihat.")
             with st.expander("Detail keyakinan model", expanded=False):
-                st.text(f"Confidence: {data.get('confidence', 'Tidak tersedia')}")
-                st.text(f"Margin: {data.get('margin', 'Tidak tersedia')}")
                 reasons = (data.get("decision") or {}).get("reasons") or []
                 st.text("Alasan rejection: " + (", ".join(reasons) if reasons else "Tidak tersedia"))
         else:

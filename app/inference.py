@@ -4,7 +4,7 @@ from typing import Any
 
 import torch
 import torch.nn.functional as F
-from PIL import Image
+from PIL import Image, ImageOps
 
 from .resources import EMBEDDING_DIM, ModelResources
 from .public import display_name as _display_name, public_profile as _profile
@@ -37,6 +37,8 @@ UNCERTAIN_MESSAGE = (
 
 def predict_image(image: Image.Image, resources: ModelResources, *,
                   min_confidence: float = 0.85, min_margin: float = 0.20) -> dict[str, Any]:
+    if resources.model_config.get("resize_mode") == "aspect_ratio_preserving_white_padding":
+        image = ImageOps.pad(image.convert("RGB"), (224, 224), color=(255, 255, 255))
     inputs = resources.image_processor(images=image, return_tensors="pt")
     pixel_values = inputs["pixel_values"].to(resources.device)
     if pixel_values.ndim != 4 or tuple(pixel_values.shape[-2:]) != (224, 224):
