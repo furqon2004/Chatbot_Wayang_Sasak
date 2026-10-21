@@ -1,0 +1,17 @@
+**
+!Dockerfile
+!requirements.txt
+!requirements-ui.txt
+!main.py
+!app/
+!app/*.py
+!streamlit_app.py
+!ui_client.py
+!ui_media.py
+!ui_history.py
+!ui_history_component/
+!ui_history_component/index.html
+!.streamlit/
+!.streamlit/config.toml
+!scripts/
+!scripts/container_entrypoint.py

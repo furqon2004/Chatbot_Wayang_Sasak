@@ -1,0 +1,27 @@
+{
+    "php.debug.executablePath": "/path/to/php",
+    "chat.viewSessions.orientation": "stacked",
+    "files.exclude": {
+        "**/.env": true,
+        "**/.env.*": true,
+        "**/*.pem": true,
+        "**/*.key": true,
+        "**/*.p12": true,
+        "**/*.pfx": true,
+        "**/.streamlit/secrets.toml": true,
+        "**/.aws/**": true,
+        "**/.ssh/**": true
+    },
+    "search.exclude": {
+        "**/.env": true,
+        "**/.env.*": true,
+        "**/*.pem": true,
+        "**/*.key": true,
+        "**/*.p12": true,
+        "**/*.pfx": true,
+        "**/.streamlit/secrets.toml": true,
+        "**/.aws/**": true,
+        "**/.ssh/**": true
+    },
+    "search.useIgnoreFiles": true
+}

@@ -1,0 +1,31 @@
+services:
+  app:
+    build: .
+    image: wayang-sasak
+    mem_limit: 1g
+    memswap_limit: 1g
+    init: true
+    restart: "on-failure:3"
+    stop_grace_period: 30s
+    env_file:
+      - .env.docker
+    environment:
+      WAYANG_API_URL: http://127.0.0.1:8000
+    volumes:
+      - type: bind
+        source: ./artifacts
+        target: /data
+        read_only: true
+        bind:
+          create_host_path: false
+    ports:
+      - "127.0.0.1:8501:8501"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

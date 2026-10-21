@@ -138,6 +138,15 @@ Error utama:
 | 500 | kegagalan inferensi internal (tanpa traceback pada respons) |
 | 503 | resource belum siap |
 
+## Docker dan VPS Ubuntu
+
+Packaging satu container untuk backend dan Streamlit tersedia di `Dockerfile`
+dan `compose.yaml`, dengan batas total RAM 1 GiB. Hasil audit belum membuktikan
+bahwa model asli beserta UI dapat berjalan stabil pada batas ini.
+Lihat [hasil audit deployment](docs/deployment-audit.md) dan
+[panduan VPS Ubuntu](docs/vps-deployment.md) untuk artefak, environment production,
+pengukuran RAM, serta konfigurasi reverse proxy.
+
 ## Pengujian lokal
 
 ```bash
